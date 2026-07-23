@@ -59,49 +59,53 @@
           <div class="wallpaper-orbit orbit-one"></div>
           <div class="wallpaper-orbit orbit-two"></div>
 
-          <section class="pulse-panel usage-panel" aria-label="用量概览面板示意">
-            <div class="panel-heading">
-              <strong>最近 14 天</strong>
-              <span>今日 1.42M</span>
+          <section class="dock-panel usage-panel" aria-label="用量概览面板示意">
+            <div class="usage-trend">
+              <div class="usage-title">
+                <strong>近 14 天</strong>
+                <strong>18.7M</strong>
+              </div>
+              <div class="usage-bars" aria-hidden="true">
+                <i style="--bar: 8px"></i><i style="--bar: 13px"></i>
+                <i style="--bar: 6px"></i><i style="--bar: 16px"></i>
+                <i style="--bar: 11px"></i><i style="--bar: 20px"></i>
+                <i style="--bar: 14px"></i><i style="--bar: 9px"></i>
+                <i style="--bar: 18px"></i><i style="--bar: 12px"></i>
+                <i style="--bar: 21px"></i><i style="--bar: 15px"></i>
+                <i style="--bar: 17px"></i><i style="--bar: 21px"></i>
+              </div>
+              <div class="usage-dates"><span>7月10日</span><span>7月23日&nbsp;&nbsp;1.42M</span></div>
             </div>
-            <div class="chart" aria-hidden="true">
-              <svg viewBox="0 0 360 90" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#9bf0cd" stop-opacity=".34"/>
-                    <stop offset="100%" stop-color="#9bf0cd" stop-opacity="0"/>
-                  </linearGradient>
-                </defs>
-                <path class="chart-fill" d="M0 75 C30 70 34 55 64 58 S95 79 125 61 S166 28 196 44 S234 72 263 47 S317 26 360 16 V90 H0Z"/>
-                <path class="chart-line" d="M0 75 C30 70 34 55 64 58 S95 79 125 61 S166 28 196 44 S234 72 263 47 S317 26 360 16"/>
-              </svg>
-              <div class="chart-days"><span>7/10</span><span>7/16</span><span>今天</span></div>
-            </div>
-            <div class="quota-row">
-              <div>
-                <strong>周额度</strong>
+            <div class="panel-divider"></div>
+            <div class="weekly-limit">
+              <div class="weekly-title">
+                <strong>周限额</strong>
+                <span>已用 32%</span>
                 <span>剩余 68%</span>
               </div>
-              <div class="quota-track"><i></i></div>
-              <small>3 天 14 小时后重置</small>
+              <div class="weekly-track"><i></i></div>
+              <div class="weekly-meta"><span>7月27日 08:00 重置</span><span>日均可用 17%</span></div>
+              <strong class="weekly-countdown">3 天 14 小时后重置</strong>
             </div>
           </section>
 
-          <section class="pulse-panel task-panel" aria-label="任务活动面板示意">
-            <div class="task-project">
-              <strong>CodexPulse</strong>
-              <span>2 个任务</span>
-            </div>
-            <div class="task-session">打磨公开发布体验</div>
-            <div class="task-row running">
+          <section class="dock-panel task-panel" aria-label="任务活动面板示意">
+            <strong class="project-row">CodexPulse</strong>
+            <div class="session-row"># 打磨公开发布体验</div>
+            <div class="task-row">
               <span class="status-spinner" aria-hidden="true"></span>
-              <p>创建 Github 公开仓库，并提交。</p>
-              <time>1m 24s</time>
+              <p>像素级复刻两个 Dock 面板</p>
+              <time>01:24</time>
             </div>
             <div class="task-row">
               <span class="status-done" aria-hidden="true">✓</span>
-              <p>完善面板交互与多语言</p>
-              <time>8m</time>
+              <p>创建 GitHub 公开仓库并启用 Pages</p>
+              <time>08:12</time>
+            </div>
+            <div class="task-row task-dimmed">
+              <span class="status-done" aria-hidden="true">✓</span>
+              <p>运行完整测试</p>
+              <time>00:38</time>
             </div>
           </section>
 
@@ -114,7 +118,7 @@
             <span class="dock-icon settings"></span>
           </div>
         </div>
-        <p class="mockup-note">界面示意 · 实际内容来自你的本机 Codex 数据</p>
+        <p class="mockup-note">HTML/CSS 界面复刻 · 演示数据</p>
       </div>
     </section>
 
