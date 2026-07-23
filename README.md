@@ -120,7 +120,7 @@ Cold launch can still produce a brief memory peak with a large local history, bu
 
 - macOS 26+
 - Xcode 26+ / Swift 6.2+
-- SQLite 3
+- SQLite 3 provided by macOS (release artifacts must not link Homebrew or other external SQLite libraries)
 
 ## Run
 

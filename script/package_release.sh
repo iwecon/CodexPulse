@@ -88,6 +88,17 @@ if ! lipo -archs "$EXECUTABLE" | tr ' ' '\n' | grep -qx "$ARCH"; then
   exit 1
 fi
 
+while IFS= read -r dependency; do
+  case "$dependency" in
+    /System/Library/*|/usr/lib/*)
+      ;;
+    *)
+      echo "Release executable links a non-system dependency: $dependency" >&2
+      exit 1
+      ;;
+  esac
+done < <(otool -L "$EXECUTABLE" | awk 'NR > 1 { print $1 }')
+
 if [[ ! -d "$ICON_SOURCE" ]]; then
   echo "Icon Composer document not found at $ICON_SOURCE" >&2
   exit 1
