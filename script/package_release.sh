@@ -5,6 +5,8 @@ set -euo pipefail
 ARCH=""
 VERSION=""
 OUTPUT_DIR="dist"
+SIGNING_IDENTITY="-"
+SIGNING_KEYCHAIN=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -18,6 +20,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --output)
       OUTPUT_DIR="$2"
+      shift 2
+      ;;
+    --signing-identity)
+      SIGNING_IDENTITY="$2"
+      shift 2
+      ;;
+    --signing-keychain)
+      SIGNING_KEYCHAIN="$2"
       shift 2
       ;;
     *)
@@ -35,6 +45,16 @@ fi
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "--version must be a semantic version such as 0.1.0" >&2
   exit 64
+fi
+
+if [[ -n "$SIGNING_KEYCHAIN" && "$SIGNING_IDENTITY" == "-" ]]; then
+  echo "--signing-keychain requires --signing-identity" >&2
+  exit 64
+fi
+
+if [[ -n "$SIGNING_KEYCHAIN" && ! -f "$SIGNING_KEYCHAIN" ]]; then
+  echo "Signing keychain not found at $SIGNING_KEYCHAIN" >&2
+  exit 1
 fi
 
 REPOSITORY_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -108,8 +128,23 @@ plutil -insert LSUIElement -bool true "$PLIST"
 plutil -insert NSHighResolutionCapable -bool true "$PLIST"
 plutil -insert NSPrincipalClass -string "NSApplication" "$PLIST"
 
-codesign --force --deep --options runtime --sign - "$APP_DIR"
-codesign --verify --deep --strict "$APP_DIR"
+if [[ "$SIGNING_IDENTITY" == "-" ]]; then
+  echo "No Developer ID identity supplied; using ad hoc signing"
+  codesign --force --deep --options runtime --sign - "$APP_DIR"
+else
+  echo "Signing app with Developer ID identity $SIGNING_IDENTITY"
+  if [[ -n "$SIGNING_KEYCHAIN" ]]; then
+    codesign --force --deep --options runtime --timestamp \
+      --keychain "$SIGNING_KEYCHAIN" \
+      --sign "$SIGNING_IDENTITY" \
+      "$APP_DIR"
+  else
+    codesign --force --deep --options runtime --timestamp \
+      --sign "$SIGNING_IDENTITY" \
+      "$APP_DIR"
+  fi
+fi
+codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 
 ditto "$APP_DIR" "$DMG_ROOT/Codex Pulse.app"
 ln -s /Applications "$DMG_ROOT/Applications"
@@ -120,5 +155,20 @@ hdiutil create \
   -format UDZO \
   -ov \
   "$DMG_PATH"
+
+if [[ "$SIGNING_IDENTITY" != "-" ]]; then
+  echo "Signing disk image with Developer ID identity $SIGNING_IDENTITY"
+  if [[ -n "$SIGNING_KEYCHAIN" ]]; then
+    codesign --force --timestamp \
+      --keychain "$SIGNING_KEYCHAIN" \
+      --sign "$SIGNING_IDENTITY" \
+      "$DMG_PATH"
+  else
+    codesign --force --timestamp \
+      --sign "$SIGNING_IDENTITY" \
+      "$DMG_PATH"
+  fi
+  codesign --verify --strict --verbose=2 "$DMG_PATH"
+fi
 
 echo "Created $DMG_PATH"
