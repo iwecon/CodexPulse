@@ -2,6 +2,18 @@
 
 Codex Pulse 是一个使用 SwiftUI 与 AppKit 构建的 macOS 桌面配件，通过 Dock 两侧的“用量概览面板”和“任务活动面板”展示本机 Codex Token 用量、周额度和最近任务状态。所有数据均从本机读取，不上传。
 
+<p align="center">
+  <a href="https://iwecon.github.io/CodexPulse/">
+    <img src="docs/assets/codex-pulse-preview.jpg" alt="Codex Pulse 产品预览：用量概览面板与任务活动面板贴在 macOS Dock 两侧" width="1200">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://iwecon.github.io/CodexPulse/">产品落地页</a>
+  ·
+  <a href="https://github.com/iwecon/CodexPulse">查看源码</a>
+</p>
+
 ## 面板术语
 
 - **用量概览面板（Usage Overview Panel）**：Dock 位于屏幕底部时显示在左侧，汇总最近 14 天的 Token 用量趋势和 Codex 周额度。
