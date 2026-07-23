@@ -117,6 +117,56 @@ import UniformTypeIdentifiers
     #expect(WallpaperAppearanceSelection.representativeLuminance([0.1, 0.2, 0.8, 0.9]) == 0.5)
 }
 
+@Test func wallpaperRefreshTrackerDetectsSignatureGeometryAndRemovalChanges() {
+    let url = URL(fileURLWithPath: "/tmp/wallpaper.png")
+    let date = Date(timeIntervalSince1970: 100)
+    func state(
+        url: URL = url,
+        modificationDate: Date? = date,
+        fileSize: Int? = 1_024,
+        scaling: UInt = NSImageScaling.scaleProportionallyUpOrDown.rawValue,
+        clipping: Bool = false,
+        fillColor: WallpaperRGB? = nil,
+        screenIdentifier: UInt32? = 1,
+        panelX: CGFloat = 0
+    ) -> WallpaperRefreshState {
+        WallpaperRefreshState(
+            signature: WallpaperStateSignature(
+                image: .init(url: url, modificationDate: modificationDate, fileSize: fileSize),
+                imageScalingRawValue: scaling,
+                allowClipping: clipping,
+                fillColor: fillColor
+            ),
+            screenIdentifier: screenIdentifier,
+            screenSize: CGSize(width: 1_920, height: 1_080),
+            panelRegions: [.init(identifier: 0, frame: CGRect(x: panelX, y: 0, width: 300, height: 56))]
+        )
+    }
+
+    var tracker = WallpaperRefreshTracker()
+    #expect(tracker.transition(to: state()) == .resample(invalidateDecodedWallpaper: false))
+    #expect(tracker.transition(to: state()) == .unchanged)
+    #expect(tracker.transition(to: state(panelX: 20)) == .resample(invalidateDecodedWallpaper: false))
+    #expect(tracker.transition(to: state(scaling: NSImageScaling.scaleAxesIndependently.rawValue, panelX: 20)) == .resample(invalidateDecodedWallpaper: false))
+    #expect(tracker.transition(to: state(clipping: true, panelX: 20)) == .resample(invalidateDecodedWallpaper: false))
+    #expect(tracker.transition(to: state(fillColor: WallpaperRGB(red: 1, green: 1, blue: 1), panelX: 20)) == .resample(invalidateDecodedWallpaper: false))
+    #expect(tracker.transition(to: state(screenIdentifier: 2, panelX: 20)) == .resample(invalidateDecodedWallpaper: false))
+    #expect(tracker.transition(to: state(fileSize: 2_048, panelX: 20)) == .resample(invalidateDecodedWallpaper: true))
+    #expect(tracker.transition(to: state(
+        url: URL(fileURLWithPath: "/tmp/other-wallpaper.png"),
+        fileSize: 2_048,
+        panelX: 20
+    )) == .resample(invalidateDecodedWallpaper: true))
+    #expect(tracker.transition(to: state(
+        url: URL(fileURLWithPath: "/tmp/other-wallpaper.png"),
+        modificationDate: date.addingTimeInterval(1),
+        fileSize: 2_048,
+        panelX: 20
+    )) == .resample(invalidateDecodedWallpaper: true))
+    #expect(tracker.transition(to: nil) == .removed)
+    #expect(tracker.transition(to: nil) == .unchanged)
+}
+
 @Test func wallpaperSamplerPreservesDecodedTopAndBottomOrientation() async throws {
     let temporaryDirectory = FileManager.default.temporaryDirectory
         .appending(path: "CodexPulseWallpaperTests-(UUID().uuidString)", directoryHint: .isDirectory)
