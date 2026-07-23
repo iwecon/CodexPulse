@@ -915,7 +915,7 @@ private final class DockPanelInteractionView: NSView {
     }
 
     private func configure(_ surface: NSGlassEffectView, button: NSButton, action: Selector) {
-        surface.style = .clear
+        surface.style = .regular
         configureContinuousCorners(surface, radius: DockPanelOverlayGeometry.actionCornerRadius)
         let content = NSView()
         content.addSubview(button)
