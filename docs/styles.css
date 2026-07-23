@@ -316,7 +316,8 @@ a:focus-visible {
 }
 
 .usage-panel {
-  right: calc(50% + 114px);
+  right: auto;
+  left: 2px;
   display: flex;
   gap: 6px;
   align-items: end;
@@ -423,7 +424,8 @@ a:focus-visible {
 }
 
 .task-panel {
-  left: calc(50% + 114px);
+  right: 2px;
+  left: auto;
   min-height: 61px;
   padding: 0 6px 4px;
 }
