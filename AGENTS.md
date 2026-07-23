@@ -18,24 +18,32 @@ Use these canonical names in documentation, requirements, code review, and new s
 - Package tools version: Swift 6.2
 - System dependency: SQLite 3 through the `CSQLite` system-library target
 
-Run the full test suite after changing parsing, models, task state, launch-at-login behavior, or app lifecycle code.
+Run the full test suite after changing panel text rendering, wallpaper sampling or cache invalidation, refresh suspension, panel placement or window levels, interaction geometry, parsing, models, task state, launch-at-login behavior, or app lifecycle code.
 
 ## Source map
 
 - `Sources/CodexPulse/App.swift`: app lifecycle, shared model, Dock panel placement, and SwiftUI views.
+- `Sources/CodexPulse/CodexSessionLink.swift`: clickable Codex session-title windows and their matching white-text shadow rendering.
+- `Sources/CodexPulse/DockPanelResizing.swift`: panel arrangement and persistence, placement geometry, window levels, pointer dwell, resizing, and interaction controls.
+- `Sources/CodexPulse/RefreshActivityGate.swift`: composable refresh suspension for inactive sessions and sleeping displays.
 - `Sources/CodexPulse/UsageScanner.swift`: local Claude Code, Codex, and OpenCode usage scanning.
 - `Sources/CodexPulse/TaskMonitor.swift`: Codex task-event parsing and visible-task selection.
 - `Sources/CodexPulse/TaskExecutionLayout.swift`: shared task grouping, visible-row selection, and dynamic panel-height planning.
 - `Sources/CodexPulse/Models.swift`: usage, rate-window, daily-usage, task, snapshot, and pricing models.
 - `Sources/CodexPulse/LaunchAtLoginManager.swift`: login startup eligibility and `SMAppService` registration for release app bundles.
+- `Sources/CodexPulse/WallpaperAppearance.swift`: wallpaper geometry, luminance sampling, semantic appearance selection, refresh tracking, and decoded-image caching.
+- `Tests/CodexPulseTests/DockPanelWidthGeometryTests.swift`: panel arrangement, placement, overlay geometry, dwell timing, and window-level regression tests.
 - `Tests/CodexPulseTests/LaunchAtLoginManagerTests.swift`: launch-at-login eligibility regression tests.
 - `Tests/CodexPulseTests/ParserTests.swift`: parser and behavior regression tests.
+- `Tests/CodexPulseTests/RefreshActivityGateTests.swift`: multi-reason refresh suspension and task-animation pause regression tests.
+- `Tests/CodexPulseTests/WallpaperAppearanceTests.swift`: wallpaper mapping, appearance selection, refresh tracking, and decoded-orientation regression tests.
 
 ## Implementation constraints
 
 - Keep Codex as the only enabled usage source in `UsageSourcePolicy.enabledTools` unless a future product requirement explicitly re-enables another source. Preserve the disabled Claude Code and OpenCode scanner entry points so they can be restored without rebuilding their parsers.
 - Keep all source-data access read-only. Never rewrite or delete files under `~/.claude`, `~/.codex`, or `~/.local/share/opencode`.
 - Preserve actor isolation for `UsageScanner` and `TaskMonitor`; UI mutations remain on `MainActor`.
+- Treat session inactivity and display sleep as independent refresh-suspension reasons. Resume refresh loops only after every active reason clears. Preserve cancellation and post-await activity checks so an in-flight scan cannot publish after suspension, and keep task-status animation paused for the full suspended interval.
 - Keep JSONL processing bounded-memory: read files in fixed-size chunks, parse complete lines individually, and never restore whole-file `Data(contentsOf:)` plus `String` loading. Keep per-line Foundation parsing inside a short-lived autorelease pool.
 - Preserve per-file Claude/Codex scan caches. Unchanged files must reuse cached aggregates; changed, new, and removed files must invalidate or remove only their own cache entries. Do not restore periodic full-history parsing.
 - OpenCode scan caching must account for the SQLite database and its WAL/SHM companions so read-only caching never hides new writes.
@@ -47,6 +55,11 @@ Run the full test suite after changing parsing, models, task state, launch-at-lo
 - Preserve per-session cumulative-token delta handling when changing Codex token parsing.
 - Keep the app as an accessory app with borderless, nonactivating, click-through panels unless the product behavior is intentionally changed.
 - Panel placement must continue to support bottom, left, and right Dock positions and multiple Spaces.
+- Keep content, session-link, and interaction windows below normal application windows. Session-link hit targets must remain above content panels, and interaction controls must remain above both.
+- Keep panel text, including the AppKit session-link overlays, uniformly white with a single subtle black shadow. Preserve SwiftUI primary/secondary brightness hierarchy through the local dark semantic environment. Do not reintroduce appearance-dependent black text, white outlines, or multi-copy text rendering unless a future product requirement explicitly changes the contrast treatment.
+- Keep wallpaper appearance sampling file-based and read-only. Do not replace it with screen capture or introduce Screen Recording permission. Preserve separate per-panel sampling, desktop scaling/clipping/fill-color semantics, AppKit-to-image coordinate orientation, luminance hysteresis, and system-appearance fallback.
+- Resample wallpaper appearance only when wallpaper identity or options, screen identity or size, or sampled panel regions change. Reuse the decoded wallpaper when only geometry or display options change; invalidate it when the wallpaper URL, modification date, or file size changes. Cancel superseded work and reject stale generations before applying appearance results.
+- When the system appearance changes, apply its semantic appearance immediately as a fallback, then invalidate and resample the wallpaper after the desktop transition settles. Space changes, session activation, and display wake should re-check state without forcing redundant decoding.
 
 ## Launch-at-login behavior
 

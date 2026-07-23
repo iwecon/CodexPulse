@@ -95,17 +95,15 @@ private final class CodexSessionLinkView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
-        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let shadow = NSShadow()
-        shadow.shadowColor = (isDark ? NSColor.black : NSColor.white)
-            .withAlphaComponent(isDark ? 0.62 : 0.28)
-        shadow.shadowBlurRadius = isDark ? 0.45 : 0.25
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.62)
+        shadow.shadowBlurRadius = 0.45
         shadow.shadowOffset = .zero
         (title as NSString).draw(
             in: bounds.insetBy(dx: 0, dy: 1),
             withAttributes: [
                 .font: NSFont.systemFont(ofSize: 8, weight: .semibold),
-                .foregroundColor: NSColor.labelColor,
+                .foregroundColor: NSColor.white,
                 .paragraphStyle: paragraph,
                 .shadow: shadow,
             ]

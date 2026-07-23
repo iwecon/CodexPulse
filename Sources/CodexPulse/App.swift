@@ -647,22 +647,17 @@ enum DockPanelContentLayout {
     static let bottomInset: CGFloat = 4
 }
 
-private struct DockPanelTextOutline: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
+private struct DockPanelTextShadow: ViewModifier {
     func body(content: Content) -> some View {
-        content.shadow(
-            color: colorScheme == .light
-                ? Color.white.opacity(0.28)
-                : Color.black.opacity(0.62),
-            radius: colorScheme == .light ? 0.25 : 0.45
-        )
+        content
+            .environment(\.colorScheme, .dark)
+            .shadow(color: Color.black.opacity(0.62), radius: 0.45)
     }
 }
 
 private extension Text {
-    func dockPanelTextOutline() -> some View {
-        modifier(DockPanelTextOutline())
+    func dockPanelTextShadow() -> some View {
+        modifier(DockPanelTextShadow())
     }
 }
 
@@ -698,11 +693,11 @@ struct RecentUsageView: View {
         VStack(alignment: presentation.usageSide == .left ? .leading : .trailing, spacing: 1) {
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text("近 14 天")
-                    .dockPanelTextOutline()
+                    .dockPanelTextShadow()
                     .font(.system(size: 10, weight: .semibold))
                 Spacer(minLength: 2)
                 Text(UsageModel.compact(total))
-                    .dockPanelTextOutline()
+                    .dockPanelTextShadow()
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .monospacedDigit()
             }
@@ -719,13 +714,13 @@ struct RecentUsageView: View {
             .frame(height: 21, alignment: .bottom)
             HStack {
                 Text(days.first?.date.formatted(.dateTime.month().day()) ?? "—")
-                    .dockPanelTextOutline()
+                    .dockPanelTextShadow()
                 Spacer()
                 HStack(spacing: 3) {
                     Text(days.last?.date.formatted(.dateTime.month().day()) ?? "—")
-                        .dockPanelTextOutline()
+                        .dockPanelTextShadow()
                     Text(UsageModel.compact(days.last?.total ?? 0))
-                        .dockPanelTextOutline()
+                        .dockPanelTextShadow()
                         .monospacedDigit()
                 }
             }
@@ -749,7 +744,7 @@ struct WeeklyLimitView: View {
                     now: context.date
                 )
                 Text(String(format: "日均可用 %.1f%%", value))
-                    .dockPanelTextOutline()
+                    .dockPanelTextShadow()
                     .monospacedDigit()
                     .lineLimit(1)
                     .layoutPriority(1)
@@ -763,7 +758,7 @@ struct WeeklyLimitView: View {
         var body: some View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Text(WeeklyLimitCountdown.format(reset: reset, now: context.date))
-                    .dockPanelTextOutline()
+                    .dockPanelTextShadow()
                     .fontWeight(.semibold)
                     .monospacedDigit()
                     .lineLimit(1)
@@ -786,13 +781,13 @@ struct WeeklyLimitView: View {
             VStack(alignment: alignTrailing ? .trailing : .leading, spacing: 2) {
                 HStack(spacing: 5) {
                     Text("周限额")
-                        .dockPanelTextOutline()
+                        .dockPanelTextShadow()
                         .fontWeight(.semibold)
                     Spacer(minLength: 2)
                     Text("已用 \(Int(used.rounded()))%")
-                        .dockPanelTextOutline()
+                        .dockPanelTextShadow()
                     Text("剩余 \(Int((100 - used).rounded()))%")
-                        .dockPanelTextOutline()
+                        .dockPanelTextShadow()
                 }
                 .font(.system(size: 9))
                 .lineLimit(1)
@@ -807,7 +802,7 @@ struct WeeklyLimitView: View {
                 .frame(height: 4)
                 HStack(spacing: 4) {
                     Text("重置 \(weekly.resetsAt.formatted(.dateTime.month().day().hour().minute()))")
-                        .dockPanelTextOutline()
+                        .dockPanelTextShadow()
                         .lineLimit(1)
                     Spacer(minLength: 2)
                     AverageDailyAvailableText(used: used, resetsAt: weekly.resetsAt)
@@ -820,10 +815,10 @@ struct WeeklyLimitView: View {
         } else {
             VStack(alignment: alignTrailing ? .trailing : .leading, spacing: 2) {
                 Text("周额度")
-                    .dockPanelTextOutline()
+                    .dockPanelTextShadow()
                     .fontWeight(.semibold)
                 Text("暂无数据")
-                    .dockPanelTextOutline()
+                    .dockPanelTextShadow()
                     .foregroundStyle(.secondary)
             }
             .font(.system(size: 9))
@@ -933,7 +928,7 @@ struct TaskExecutionView: View {
 
         private func durationText(now: Date) -> some View {
             Text(Self.duration(for: task, now: now))
-                .dockPanelTextOutline()
+                .dockPanelTextShadow()
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .layoutPriority(3)
@@ -956,7 +951,7 @@ struct TaskExecutionView: View {
         var body: some View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Text(task.latestUserMessage.isEmpty ? "—" : task.latestUserMessage)
-                    .dockPanelTextOutline()
+                    .dockPanelTextShadow()
                     .foregroundStyle(.secondary)
                     .opacity(task.shouldDimMessage(at: context.date) ? 0.45 : 1)
                     .lineLimit(2)
@@ -981,21 +976,21 @@ struct TaskExecutionView: View {
             VStack(alignment: .leading, spacing: 0) {
                 if plan.projects.isEmpty {
                     Text("近10分钟没有活动任务")
-                        .dockPanelTextOutline()
+                        .dockPanelTextShadow()
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                         .frame(height: TaskExecutionLayout.emptyStateHeight, alignment: .center)
                 } else {
                     ForEach(plan.projects) { project in
                         Text(project.name)
-                            .dockPanelTextOutline()
+                            .dockPanelTextShadow()
                             .font(.system(size: 8, weight: .bold))
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .frame(height: TaskExecutionLayout.projectRowHeight)
                         ForEach(project.sessions) { session in
                             Text("# \(session.name)")
-                                .dockPanelTextOutline()
+                                .dockPanelTextShadow()
                                 .font(.system(size: 8, weight: .semibold))
                                 .lineLimit(1)
                                 .truncationMode(.tail)
