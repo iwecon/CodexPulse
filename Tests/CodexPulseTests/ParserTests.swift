@@ -48,25 +48,25 @@ import Foundation
     let now = Date(timeIntervalSince1970: 1_780_000_000)
 
     #expect(WeeklyLimitCountdown.format(
-        reset: now.addingTimeInterval(5 * 86_400 + 17 * 3_600 + 23 * 60 + 45),
+        reset: now.addingTimeInterval(5 * 86_400 + 16 * 3_600 + 32 * 60 + 45),
         now: now
-    ) == "倒计时 5天 17小时 23分钟")
+    ) == "倒计时 5天 16小时")
     #expect(WeeklyLimitCountdown.format(
-        reset: now.addingTimeInterval(17 * 3_600 + 23 * 60 + 59),
+        reset: now.addingTimeInterval(16 * 3_600 + 32 * 60 + 59),
         now: now
-    ) == "倒计时 17小时 23分钟")
+    ) == "倒计时 16小时 32分钟")
     #expect(WeeklyLimitCountdown.format(
-        reset: now.addingTimeInterval(23 * 60 + 59),
+        reset: now.addingTimeInterval(10 * 60 + 59),
         now: now
-    ) == "倒计时 23分钟")
+    ) == "倒计时 10分钟")
     #expect(WeeklyLimitCountdown.format(
         reset: now.addingTimeInterval(59),
         now: now
-    ) == "倒计时 59秒")
+    ) == "倒计时 小于1分钟")
     #expect(WeeklyLimitCountdown.format(
         reset: now.addingTimeInterval(-1),
         now: now
-    ) == "倒计时 0秒")
+    ) == "倒计时 小于1分钟")
 }
 
 @Test func dailyUsageAlwaysCoversFourteenCalendarDays() {

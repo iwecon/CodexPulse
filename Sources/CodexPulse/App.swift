@@ -756,7 +756,7 @@ struct WeeklyLimitView: View {
         let reset: Date
 
         var body: some View {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
+            TimelineView(.periodic(from: .now, by: 60)) { context in
                 Text(WeeklyLimitCountdown.format(reset: reset, now: context.date))
                     .dockPanelTextShadow()
                     .fontWeight(.semibold)
@@ -834,7 +834,7 @@ enum WeeklyLimitCountdown {
         let hours = (totalSeconds % 86_400) / 3_600
         let minutes = (totalSeconds % 3_600) / 60
         if days > 0 {
-            return "倒计时 \(days)天 \(hours)小时 \(minutes)分钟"
+            return "倒计时 \(days)天 \(hours)小时"
         }
         if hours > 0 {
             return "倒计时 \(hours)小时 \(minutes)分钟"
@@ -842,7 +842,7 @@ enum WeeklyLimitCountdown {
         if minutes > 0 {
             return "倒计时 \(minutes)分钟"
         }
-        return "倒计时 \(totalSeconds)秒"
+        return "倒计时 小于1分钟"
     }
 }
 
