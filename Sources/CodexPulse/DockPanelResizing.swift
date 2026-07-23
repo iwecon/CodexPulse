@@ -173,6 +173,7 @@ struct PanelMovementPresentation: Equatable {
 @MainActor @Observable
 final class DockPanelPresentationState {
     var usageSide: PanelSide = .left
+    var taskSide: PanelSide = .right
 }
 
 enum DockPanelResizeAnchor {

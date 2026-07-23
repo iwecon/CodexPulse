@@ -265,6 +265,7 @@ final class DockPanelController {
         taskActivityPreferredWidth = preferences.taskActivityPreferredWidth
         let presentationState = DockPanelPresentationState()
         presentationState.usageSide = preferences.arrangement.usageSide
+        presentationState.taskSide = preferences.arrangement.taskSide
         self.presentationState = presentationState
         leftPanel = Self.panel(
             rootView: AnyView(RecentUsageView(
@@ -275,7 +276,11 @@ final class DockPanelController {
             size: NSSize(width: preferences.usageOverviewPreferredWidth, height: 56)
         )
         rightPanel = Self.panel(
-            rootView: AnyView(TaskExecutionView(model: model, languageSettings: languageSettings)),
+            rootView: AnyView(TaskExecutionView(
+                model: model,
+                presentation: presentationState,
+                languageSettings: languageSettings
+            )),
             size: NSSize(width: preferences.taskActivityPreferredWidth, height: taskPlan.panelHeight)
         )
         observedSystemAppearance = Self.currentSystemAppearance
@@ -607,6 +612,7 @@ final class DockPanelController {
     private func togglePanelSide(_ identity: DockPanelIdentity) {
         arrangement.toggleSide(for: identity)
         presentationState.usageSide = arrangement.usageSide
+        presentationState.taskSide = arrangement.taskSide
         savePreferences()
         positionPanels()
     }
@@ -893,6 +899,7 @@ enum WeeklyLimitPacing {
 struct TaskExecutionView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var model: UsageModel
+    let presentation: DockPanelPresentationState
     @Bindable var languageSettings: AppLanguageSettings
 
     private struct TaskStatusIndicator: View {
@@ -1010,7 +1017,12 @@ struct TaskExecutionView: View {
                         .dockPanelTextShadow()
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
-                        .frame(height: TaskExecutionLayout.emptyStateHeight, alignment: .center)
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: TaskExecutionLayout.emptyStateHeight,
+                            maxHeight: TaskExecutionLayout.emptyStateHeight,
+                            alignment: presentation.taskSide == .left ? .leading : .trailing
+                        )
                 } else {
                     ForEach(plan.projects) { project in
                         Text(project.name)
