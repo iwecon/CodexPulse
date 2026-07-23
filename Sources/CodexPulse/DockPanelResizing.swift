@@ -3,8 +3,9 @@ import Observation
 import QuartzCore
 
 enum DockPanelWindowLevel {
-    static let sessionLink = NSWindow.Level.floating
-    static let interaction = NSWindow.Level(rawValue: sessionLink.rawValue + 1)
+    static let content = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)))
+    static let sessionLink = NSWindow.Level(rawValue: content.rawValue + 1)
+    static let interaction = NSWindow.Level(rawValue: content.rawValue + 2)
 }
 
 enum DockPanelIdentity: CaseIterable, Equatable {

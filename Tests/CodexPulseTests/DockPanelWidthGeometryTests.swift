@@ -240,8 +240,10 @@ import Testing
     #expect(DockPanelResizeController.hideDelay == 1)
 }
 
-@Test func interactionControlsStayAboveSessionLinks() {
+@Test func dockPanelsStayBelowApplicationWindowsWithControlsAboveContent() {
+    #expect(DockPanelWindowLevel.content.rawValue < DockPanelWindowLevel.sessionLink.rawValue)
     #expect(DockPanelWindowLevel.interaction.rawValue > DockPanelWindowLevel.sessionLink.rawValue)
+    #expect(DockPanelWindowLevel.interaction.rawValue < NSWindow.Level.normal.rawValue)
 }
 
 @Test func interactionGeometryClampsVerticallyAndResizeOnlyStaysAnchored() {

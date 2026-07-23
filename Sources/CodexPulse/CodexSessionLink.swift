@@ -19,6 +19,15 @@ enum CodexThreadLink {
 @MainActor
 final class CodexSessionLinkController {
     private var panels: [String: NSPanel] = [:]
+    private var appearance: NSAppearance?
+
+    func setAppearance(_ appearance: NSAppearance?) {
+        self.appearance = appearance
+        for panel in panels.values {
+            panel.appearance = appearance
+            panel.contentView?.needsDisplay = true
+        }
+    }
 
     func update(taskPanelFrame: CGRect, plan: TaskExecutionLayout.Plan) {
         let links = TaskExecutionLayout.sessionLinks(for: plan, panelWidth: taskPanelFrame.width)
@@ -46,6 +55,7 @@ final class CodexSessionLinkController {
             defer: false
         )
         panel.contentView = CodexSessionLinkView(threadID: threadID, title: title)
+        panel.appearance = appearance
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
@@ -85,12 +95,19 @@ private final class CodexSessionLinkView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
+        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let shadow = NSShadow()
+        shadow.shadowColor = (isDark ? NSColor.black : NSColor.white)
+            .withAlphaComponent(isDark ? 0.62 : 0.28)
+        shadow.shadowBlurRadius = isDark ? 0.45 : 0.25
+        shadow.shadowOffset = .zero
         (title as NSString).draw(
             in: bounds.insetBy(dx: 0, dy: 1),
             withAttributes: [
                 .font: NSFont.systemFont(ofSize: 8, weight: .semibold),
                 .foregroundColor: NSColor.labelColor,
                 .paragraphStyle: paragraph,
+                .shadow: shadow,
             ]
         )
     }
