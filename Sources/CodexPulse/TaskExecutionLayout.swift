@@ -130,10 +130,14 @@ struct TaskExecutionLayout {
         )
     }
 
-    static func sessionLinks(for plan: Plan, panelWidth: CGFloat) -> [SessionLink] {
+    static func sessionLinks(
+        for plan: Plan,
+        panelWidth: CGFloat,
+        textAlignment: TaskActivityTextAlignment = .left
+    ) -> [SessionLink] {
         let contentHeight = plan.panelHeight - DockPanelContentLayout.bottomInset
-        let x = DockPanelContentLayout.horizontalInset + 8
-        let maximumWidth = max(1, panelWidth - x - DockPanelContentLayout.horizontalInset)
+        let horizontalOffset = DockPanelContentLayout.horizontalInset + 8
+        let maximumWidth = max(1, panelWidth - horizontalOffset - DockPanelContentLayout.horizontalInset)
         let font = NSFont.systemFont(ofSize: 8, weight: .semibold)
         var offsetFromTop: CGFloat = 0
         var links: [SessionLink] = []
@@ -143,13 +147,17 @@ struct TaskExecutionLayout {
             for session in project.sessions {
                 let title = "# \(session.name)"
                 let titleWidth = ceil((title as NSString).size(withAttributes: [.font: font]).width) + 2
+                let width = min(maximumWidth, titleWidth)
+                let x = textAlignment == .left
+                    ? horizontalOffset
+                    : panelWidth - horizontalOffset - width
                 let y = DockPanelContentLayout.bottomInset
                     + contentHeight - offsetFromTop - sessionRowHeight
                 links.append(SessionLink(
                     id: "\(project.name)\u{0}\(session.id)",
                     threadID: session.id,
                     title: title,
-                    frame: CGRect(x: x, y: y, width: min(maximumWidth, titleWidth), height: sessionRowHeight)
+                    frame: CGRect(x: x, y: y, width: width, height: sessionRowHeight)
                 ))
                 offsetFromTop += sessionRowHeight
                 for task in session.tasks {

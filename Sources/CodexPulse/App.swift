@@ -197,6 +197,7 @@ final class DockPanelController {
     private var arrangement: PanelArrangement
     private var usageOverviewPreferredWidth: CGFloat
     private var taskActivityPreferredWidth: CGFloat
+    private var taskActivityTextAlignment: TaskActivityTextAlignment
     private var resizeDrag: ResizeDrag?
     private let wallpaperAppearanceSampler = WallpaperAppearanceSampler()
     private var wallpaperAppearanceTask: Task<Void, Never>?
@@ -227,6 +228,10 @@ final class DockPanelController {
             guard let self else { return nil }
             return arrangement.verticalSwapPresentation(for: identity, language: languageSettings.language)
         },
+        taskTextAlignmentPresentation: { [weak self] identity in
+            guard identity == .taskActivity, let self else { return nil }
+            return taskActivityTextAlignment.controlPresentation(language: languageSettings.language)
+        },
         language: { [weak self] in
             self?.languageSettings.language ?? .simplifiedChineseMainland
         },
@@ -238,6 +243,9 @@ final class DockPanelController {
         },
         onToggleVerticalOrder: { [weak self] identity in
             self?.toggleVerticalOrder(for: identity)
+        },
+        onToggleTaskTextAlignment: { [weak self] identity in
+            self?.toggleTaskTextAlignment(for: identity)
         },
         onDragBegan: { [weak self] identity, mouseX in
             self?.beginResize(identity, mouseX: mouseX)
@@ -263,9 +271,11 @@ final class DockPanelController {
         arrangement = preferences.arrangement
         usageOverviewPreferredWidth = preferences.usageOverviewPreferredWidth
         taskActivityPreferredWidth = preferences.taskActivityPreferredWidth
+        taskActivityTextAlignment = preferences.taskActivityTextAlignment
         let presentationState = DockPanelPresentationState()
         presentationState.usageSide = preferences.arrangement.usageSide
         presentationState.taskSide = preferences.arrangement.taskSide
+        presentationState.taskActivityTextAlignment = preferences.taskActivityTextAlignment
         self.presentationState = presentationState
         leftPanel = Self.panel(
             rootView: AnyView(RecentUsageView(
@@ -396,7 +406,8 @@ final class DockPanelController {
         sessionLinkController.update(
             taskPanelFrame: rightPanel.frame,
             plan: taskPlan,
-            language: languageSettings.language
+            language: languageSettings.language,
+            textAlignment: taskActivityTextAlignment.resolved(for: arrangement.taskSide)
         )
         resizeController.panelFramesDidChange(metrics: DockPanelOverlayMetrics(
             screenFrame: frame,
@@ -624,11 +635,20 @@ final class DockPanelController {
         positionPanels()
     }
 
+    private func toggleTaskTextAlignment(for identity: DockPanelIdentity) {
+        guard identity == .taskActivity else { return }
+        taskActivityTextAlignment.advance()
+        presentationState.taskActivityTextAlignment = taskActivityTextAlignment
+        savePreferences()
+        positionPanels()
+    }
+
     private func savePreferences() {
         DockPanelPreferences(
             arrangement: arrangement,
             usageOverviewPreferredWidth: usageOverviewPreferredWidth,
-            taskActivityPreferredWidth: taskActivityPreferredWidth
+            taskActivityPreferredWidth: taskActivityPreferredWidth,
+            taskActivityTextAlignment: taskActivityTextAlignment
         ).save(to: defaults)
     }
 
@@ -987,6 +1007,7 @@ struct TaskExecutionView: View {
 
     private struct TaskMessageText: View {
         let task: TaskExecution
+        let textAlignment: TextAlignment
 
         var body: some View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -995,6 +1016,7 @@ struct TaskExecutionView: View {
                     .foregroundStyle(.secondary)
                     .opacity(task.shouldDimMessage(at: context.date) ? 0.45 : 1)
                     .lineLimit(2)
+                    .multilineTextAlignment(textAlignment)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1003,6 +1025,9 @@ struct TaskExecutionView: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let alignTrailing = presentation.taskActivityTextAlignment.resolved(
+                for: presentation.taskSide
+            ) == .right
             let plan = TaskExecutionLayout.plan(for: model.tasks, panelWidth: proxy.size.width)
             let visibleTaskIDs = Set(
                 plan.projects.flatMap { project in
@@ -1011,7 +1036,7 @@ struct TaskExecutionView: View {
                     }
                 }
             )
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: alignTrailing ? .trailing : .leading, spacing: 0) {
                 if plan.projects.isEmpty {
                     Text(languageSettings.language.noRecentTasks)
                         .dockPanelTextShadow()
@@ -1021,7 +1046,7 @@ struct TaskExecutionView: View {
                             maxWidth: .infinity,
                             minHeight: TaskExecutionLayout.emptyStateHeight,
                             maxHeight: TaskExecutionLayout.emptyStateHeight,
-                            alignment: presentation.taskSide == .left ? .leading : .trailing
+                            alignment: alignTrailing ? .trailing : .leading
                         )
                 } else {
                     ForEach(plan.projects) { project in
@@ -1030,29 +1055,50 @@ struct TaskExecutionView: View {
                             .font(.system(size: 8, weight: .bold))
                             .lineLimit(1)
                             .truncationMode(.middle)
-                            .frame(height: TaskExecutionLayout.projectRowHeight)
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: TaskExecutionLayout.projectRowHeight,
+                                maxHeight: TaskExecutionLayout.projectRowHeight,
+                                alignment: alignTrailing ? .trailing : .leading
+                            )
                         ForEach(project.sessions) { session in
                             Text("# \(session.name)")
                                 .dockPanelTextShadow()
                                 .font(.system(size: 8, weight: .semibold))
                                 .lineLimit(1)
                                 .truncationMode(.tail)
-                                .padding(.leading, 8)
-                                .frame(height: TaskExecutionLayout.sessionRowHeight)
+                                .padding(alignTrailing ? .trailing : .leading, 8)
+                                .frame(
+                                    maxWidth: .infinity,
+                                    minHeight: TaskExecutionLayout.sessionRowHeight,
+                                    maxHeight: TaskExecutionLayout.sessionRowHeight,
+                                    alignment: alignTrailing ? .trailing : .leading
+                                )
                                 .hidden()
                             ForEach(session.tasks) { task in
                                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                                    TaskStatusIndicator(
-                                        isCompleted: task.isCompleted,
-                                        isAnimationPaused: model.isTaskStatusAnimationPaused,
-                                        language: languageSettings.language
-                                    )
-                                    TaskMessageText(task: task)
-                                    Spacer(minLength: 2)
-                                    TaskDurationText(task: task)
+                                    if alignTrailing {
+                                        TaskDurationText(task: task)
+                                        Spacer(minLength: 2)
+                                        TaskStatusIndicator(
+                                            isCompleted: task.isCompleted,
+                                            isAnimationPaused: model.isTaskStatusAnimationPaused,
+                                            language: languageSettings.language
+                                        )
+                                        TaskMessageText(task: task, textAlignment: .trailing)
+                                    } else {
+                                        TaskStatusIndicator(
+                                            isCompleted: task.isCompleted,
+                                            isAnimationPaused: model.isTaskStatusAnimationPaused,
+                                            language: languageSettings.language
+                                        )
+                                        TaskMessageText(task: task, textAlignment: .leading)
+                                        Spacer(minLength: 2)
+                                        TaskDurationText(task: task)
+                                    }
                                 }
                                 .font(.system(size: 9))
-                                .padding(.leading, 8)
+                                .padding(alignTrailing ? .trailing : .leading, 8)
                                 .frame(
                                     height: TaskExecutionLayout.taskRowHeight(for: task, panelWidth: proxy.size.width),
                                     alignment: .top

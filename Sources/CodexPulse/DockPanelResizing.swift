@@ -30,6 +30,45 @@ enum PanelVerticalOrder: CaseIterable, Equatable {
     case taskAboveUsage
 }
 
+enum TaskActivityTextAlignment: String, CaseIterable, Equatable {
+    case auto
+    case left
+    case right
+
+    mutating func advance() {
+        switch self {
+        case .auto: self = .left
+        case .left: self = .right
+        case .right: self = .auto
+        }
+    }
+
+    func resolved(for panelSide: PanelSide) -> TaskActivityTextAlignment {
+        switch self {
+        case .auto: panelSide == .left ? .left : .right
+        case .left, .right: self
+        }
+    }
+
+    func controlPresentation(language: AppLanguage) -> PanelMovementPresentation {
+        let target: TaskActivityTextAlignment
+        switch self {
+        case .auto: target = .left
+        case .left: target = .right
+        case .right: target = .auto
+        }
+        let systemImageName = switch self {
+        case .auto: "text.justify"
+        case .left: "text.alignleft"
+        case .right: "text.alignright"
+        }
+        return PanelMovementPresentation(
+            systemImageName: systemImageName,
+            label: language.alignTaskActivityText(to: target)
+        )
+    }
+}
+
 struct PanelArrangement: Equatable {
     var usageSide: PanelSide = .left
     var taskSide: PanelSide = .right
@@ -87,20 +126,24 @@ struct DockPanelPreferences: Equatable {
         static let verticalOrder = "dockPanels.verticalOrder"
         static let usagePreferredWidth = "dockPanels.usageOverview.preferredWidth"
         static let taskPreferredWidth = "dockPanels.taskActivity.preferredWidth"
+        static let taskTextAlignment = "dockPanels.taskActivity.textAlignment"
     }
 
     var arrangement: PanelArrangement
     var usageOverviewPreferredWidth: CGFloat
     var taskActivityPreferredWidth: CGFloat
+    var taskActivityTextAlignment: TaskActivityTextAlignment
 
     init(
         arrangement: PanelArrangement = PanelArrangement(),
         usageOverviewPreferredWidth: CGFloat = DockPanelWidthGeometry.defaultWidth,
-        taskActivityPreferredWidth: CGFloat = DockPanelWidthGeometry.defaultWidth
+        taskActivityPreferredWidth: CGFloat = DockPanelWidthGeometry.defaultWidth,
+        taskActivityTextAlignment: TaskActivityTextAlignment = .auto
     ) {
         self.arrangement = arrangement
         self.usageOverviewPreferredWidth = usageOverviewPreferredWidth
         self.taskActivityPreferredWidth = taskActivityPreferredWidth
+        self.taskActivityTextAlignment = taskActivityTextAlignment
     }
 
     init(defaults: UserDefaults) {
@@ -117,6 +160,9 @@ struct DockPanelPreferences: Equatable {
             defaults.object(forKey: Key.taskPreferredWidth),
             fallback: DockPanelWidthGeometry.defaultWidth
         )
+        taskActivityTextAlignment = defaults.string(forKey: Key.taskTextAlignment)
+            .flatMap(TaskActivityTextAlignment.init(rawValue:))
+            ?? .auto
     }
 
     func save(to defaults: UserDefaults) {
@@ -125,6 +171,7 @@ struct DockPanelPreferences: Equatable {
         defaults.set(Self.string(for: arrangement.verticalOrder), forKey: Key.verticalOrder)
         defaults.set(Double(usageOverviewPreferredWidth), forKey: Key.usagePreferredWidth)
         defaults.set(Double(taskActivityPreferredWidth), forKey: Key.taskPreferredWidth)
+        defaults.set(taskActivityTextAlignment.rawValue, forKey: Key.taskTextAlignment)
     }
 
     private static func side(_ value: String?) -> PanelSide? {
@@ -174,6 +221,7 @@ struct PanelMovementPresentation: Equatable {
 final class DockPanelPresentationState {
     var usageSide: PanelSide = .left
     var taskSide: PanelSide = .right
+    var taskActivityTextAlignment: TaskActivityTextAlignment = .auto
 }
 
 enum DockPanelResizeAnchor {
@@ -604,10 +652,12 @@ final class DockPanelResizeController {
     private let panelSide: SideProvider
     private let sideTogglePresentation: PresentationProvider
     private let verticalSwapPresentation: OptionalPresentationProvider
+    private let taskTextAlignmentPresentation: OptionalPresentationProvider
     private let language: LanguageProvider
     private let onSelectLanguage: LanguageHandler
     private let onToggleSide: ActionHandler
     private let onToggleVerticalOrder: ActionHandler
+    private let onToggleTaskTextAlignment: ActionHandler
     private let onDragBegan: DragHandler
     private let onDragChanged: DragHandler
     private let onDragEnded: DragHandler
@@ -630,10 +680,12 @@ final class DockPanelResizeController {
         panelSide: @escaping SideProvider,
         sideTogglePresentation: @escaping PresentationProvider,
         verticalSwapPresentation: @escaping OptionalPresentationProvider,
+        taskTextAlignmentPresentation: @escaping OptionalPresentationProvider,
         language: @escaping LanguageProvider,
         onSelectLanguage: @escaping LanguageHandler,
         onToggleSide: @escaping ActionHandler,
         onToggleVerticalOrder: @escaping ActionHandler,
+        onToggleTaskTextAlignment: @escaping ActionHandler,
         onDragBegan: @escaping DragHandler,
         onDragChanged: @escaping DragHandler,
         onDragEnded: @escaping DragHandler
@@ -642,10 +694,12 @@ final class DockPanelResizeController {
         self.panelSide = panelSide
         self.sideTogglePresentation = sideTogglePresentation
         self.verticalSwapPresentation = verticalSwapPresentation
+        self.taskTextAlignmentPresentation = taskTextAlignmentPresentation
         self.language = language
         self.onSelectLanguage = onSelectLanguage
         self.onToggleSide = onToggleSide
         self.onToggleVerticalOrder = onToggleVerticalOrder
+        self.onToggleTaskTextAlignment = onToggleTaskTextAlignment
         self.onDragBegan = onDragBegan
         self.onDragChanged = onDragChanged
         self.onDragEnded = onDragEnded
@@ -712,6 +766,12 @@ final class DockPanelResizeController {
                 guard let self else { return }
                 cancelPendingHide()
                 onToggleVerticalOrder(identity)
+                updateOverlays(identity)
+            },
+            onToggleTaskTextAlignment: { [weak self] in
+                guard let self else { return }
+                cancelPendingHide()
+                onToggleTaskTextAlignment(identity)
                 updateOverlays(identity)
             },
             language: language(),
@@ -892,6 +952,7 @@ final class DockPanelResizeController {
                 side: panelSide(identity),
                 sideToggle: sideTogglePresentation(identity),
                 verticalSwap: verticalPresentation,
+                taskTextAlignment: taskTextAlignmentPresentation(identity),
                 language: language(),
                 resizeFocused: resizeFocusedHandle == identity,
                 animated: animated,
@@ -960,13 +1021,16 @@ private final class DockPanelInteractionView: NSView {
     private let languagePickerSurface = NSGlassEffectView()
     private let sideSurface = NSGlassEffectView()
     private let verticalSurface = NSGlassEffectView()
+    private let taskTextAlignmentSurface = NSGlassEffectView()
     private let languageButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let sideButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let verticalButton = NSButton(image: NSImage(), target: nil, action: nil)
+    private let taskTextAlignmentButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let languagePicker: DockPanelLanguagePickerView
     private let resizeView: DockPanelResizeRegionView
     private let onToggleSide: () -> Void
     private let onToggleVerticalOrder: () -> Void
+    private let onToggleTaskTextAlignment: () -> Void
     private var side: PanelSide = .left
     private var resizeFocused = false
     private var isLanguagePickerVisible = false
@@ -974,7 +1038,7 @@ private final class DockPanelInteractionView: NSView {
 
     var visibleButtonCount: Int {
         if isLanguagePickerVisible { return 1 }
-        return 1 + (identity == .usageOverview ? 1 : 0) + (verticalButton.isHidden ? 0 : 1)
+        return 2 + (verticalButton.isHidden ? 0 : 1)
     }
 
     init(
@@ -986,12 +1050,14 @@ private final class DockPanelInteractionView: NSView {
         onDragEnded: @escaping (CGFloat) -> Void,
         onToggleSide: @escaping () -> Void,
         onToggleVerticalOrder: @escaping () -> Void,
+        onToggleTaskTextAlignment: @escaping () -> Void,
         language: AppLanguage,
         onSelectLanguage: @escaping (AppLanguage) -> Void
     ) {
         self.identity = identity
         self.onToggleSide = onToggleSide
         self.onToggleVerticalOrder = onToggleVerticalOrder
+        self.onToggleTaskTextAlignment = onToggleTaskTextAlignment
         languagePicker = DockPanelLanguagePickerView(
             language: language,
             onSelect: onSelectLanguage
@@ -1012,6 +1078,11 @@ private final class DockPanelInteractionView: NSView {
         configure(languageSurface, button: languageButton, action: #selector(showLanguagePicker))
         configure(sideSurface, button: sideButton, action: #selector(toggleSide))
         configure(verticalSurface, button: verticalButton, action: #selector(toggleVerticalOrder))
+        configure(
+            taskTextAlignmentSurface,
+            button: taskTextAlignmentButton,
+            action: #selector(toggleTaskTextAlignment)
+        )
         languagePickerSurface.style = .regular
         configureContinuousCorners(languagePickerSurface, radius: DockPanelOverlayGeometry.actionCornerRadius)
         let pickerContent = NSView()
@@ -1021,6 +1092,7 @@ private final class DockPanelInteractionView: NSView {
         actionsView.addSubview(languagePickerSurface)
         actionsView.addSubview(sideSurface)
         actionsView.addSubview(verticalSurface)
+        actionsView.addSubview(taskTextAlignmentSurface)
         addSubview(backgroundGlass)
         addSubview(actionsView)
         addSubview(resizeView)
@@ -1055,6 +1127,10 @@ private final class DockPanelInteractionView: NSView {
             languageSurface.frame = frames[index]
             languageButton.frame = languageSurface.bounds
             index += 1
+        } else {
+            taskTextAlignmentSurface.frame = frames[index]
+            taskTextAlignmentButton.frame = taskTextAlignmentSurface.bounds
+            index += 1
         }
         sideSurface.frame = frames[index]
         sideButton.frame = sideSurface.bounds
@@ -1069,6 +1145,7 @@ private final class DockPanelInteractionView: NSView {
         side: PanelSide,
         sideToggle: PanelMovementPresentation,
         verticalSwap: PanelMovementPresentation?,
+        taskTextAlignment: PanelMovementPresentation?,
         language: AppLanguage,
         resizeFocused: Bool,
         animated: Bool,
@@ -1084,6 +1161,9 @@ private final class DockPanelInteractionView: NSView {
         languageButton.setAccessibilityLabel(language.changeLanguage)
         languageSurface.isHidden = identity != .usageOverview || isLanguagePickerVisible
         languagePickerSurface.isHidden = identity != .usageOverview || !isLanguagePickerVisible
+        taskTextAlignmentSurface.isHidden = taskTextAlignment == nil || isLanguagePickerVisible
+        taskTextAlignmentButton.isHidden = taskTextAlignment == nil || isLanguagePickerVisible
+        if let taskTextAlignment { apply(taskTextAlignment, to: taskTextAlignmentButton) }
         sideSurface.isHidden = isLanguagePickerVisible
         sideButton.isHidden = isLanguagePickerVisible
         apply(sideToggle, to: sideButton)
@@ -1203,6 +1283,7 @@ private final class DockPanelInteractionView: NSView {
 
     @objc private func toggleSide() { onToggleSide() }
     @objc private func toggleVerticalOrder() { onToggleVerticalOrder() }
+    @objc private func toggleTaskTextAlignment() { onToggleTaskTextAlignment() }
 
     @objc private func showLanguagePicker() {
         guard identity == .usageOverview else { return }

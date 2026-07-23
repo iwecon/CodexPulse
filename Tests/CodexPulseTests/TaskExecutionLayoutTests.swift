@@ -90,6 +90,25 @@ private func layoutTask(
     #expect(link.frame.minY == DockPanelContentLayout.bottomInset + TaskExecutionLayout.singleLineTaskRowHeight)
 }
 
+@Test func taskExecutionLayoutRightAlignsSessionLinks() throws {
+    let panelWidth: CGFloat = 350
+    let plan = TaskExecutionLayout.plan(for: [layoutTask("task-1")], panelWidth: panelWidth)
+    let left = try #require(TaskExecutionLayout.sessionLinks(
+        for: plan,
+        panelWidth: panelWidth,
+        textAlignment: .left
+    ).first)
+    let right = try #require(TaskExecutionLayout.sessionLinks(
+        for: plan,
+        panelWidth: panelWidth,
+        textAlignment: .right
+    ).first)
+
+    #expect(left.frame.width == right.frame.width)
+    #expect(left.frame.minX == DockPanelContentLayout.horizontalInset + 8)
+    #expect(right.frame.maxX == panelWidth - DockPanelContentLayout.horizontalInset - 8)
+}
+
 @Test func taskExecutionLayoutKeepsNewestTaskAtBottomAcrossGroups() {
     let base = Date(timeIntervalSince1970: 1_780_000_000)
     let tasks = [

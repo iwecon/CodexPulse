@@ -32,9 +32,14 @@ final class CodexSessionLinkController {
     func update(
         taskPanelFrame: CGRect,
         plan: TaskExecutionLayout.Plan,
-        language: AppLanguage
+        language: AppLanguage,
+        textAlignment: TaskActivityTextAlignment
     ) {
-        let links = TaskExecutionLayout.sessionLinks(for: plan, panelWidth: taskPanelFrame.width)
+        let links = TaskExecutionLayout.sessionLinks(
+            for: plan,
+            panelWidth: taskPanelFrame.width,
+            textAlignment: textAlignment
+        )
         let activeIDs = Set(links.map(\.id))
 
         let staleIDs = panels.keys.filter { !activeIDs.contains($0) }
@@ -46,23 +51,38 @@ final class CodexSessionLinkController {
             let panel = panels[link.id] ?? makePanel(
                 threadID: link.threadID,
                 title: link.title,
-                language: language
+                language: language,
+                textAlignment: textAlignment
             )
             panels[link.id] = panel
-            (panel.contentView as? CodexSessionLinkView)?.update(title: link.title, language: language)
+            (panel.contentView as? CodexSessionLinkView)?.update(
+                title: link.title,
+                language: language,
+                textAlignment: textAlignment
+            )
             panel.setFrame(link.frame.offsetBy(dx: taskPanelFrame.minX, dy: taskPanelFrame.minY), display: true)
             panel.orderFrontRegardless()
         }
     }
 
-    private func makePanel(threadID: String, title: String, language: AppLanguage) -> NSPanel {
+    private func makePanel(
+        threadID: String,
+        title: String,
+        language: AppLanguage,
+        textAlignment: TaskActivityTextAlignment
+    ) -> NSPanel {
         let panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        panel.contentView = CodexSessionLinkView(threadID: threadID, title: title, language: language)
+        panel.contentView = CodexSessionLinkView(
+            threadID: threadID,
+            title: title,
+            language: language,
+            textAlignment: textAlignment
+        )
         panel.appearance = appearance
         panel.backgroundColor = .clear
         panel.isOpaque = false
@@ -81,11 +101,18 @@ private final class CodexSessionLinkView: NSView {
     private let threadID: String
     private var title: String
     private var language: AppLanguage
+    private var textAlignment: TaskActivityTextAlignment
 
-    init(threadID: String, title: String, language: AppLanguage) {
+    init(
+        threadID: String,
+        title: String,
+        language: AppLanguage,
+        textAlignment: TaskActivityTextAlignment
+    ) {
         self.threadID = threadID
         self.title = title
         self.language = language
+        self.textAlignment = textAlignment
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.link)
@@ -99,10 +126,17 @@ private final class CodexSessionLinkView: NSView {
 
     override var isFlipped: Bool { true }
 
-    func update(title: String, language: AppLanguage) {
-        guard self.title != title || self.language != language else { return }
+    func update(
+        title: String,
+        language: AppLanguage,
+        textAlignment: TaskActivityTextAlignment
+    ) {
+        guard self.title != title
+                || self.language != language
+                || self.textAlignment != textAlignment else { return }
         self.title = title
         self.language = language
+        self.textAlignment = textAlignment
         updateAccessibility()
         needsDisplay = true
     }
@@ -110,6 +144,7 @@ private final class CodexSessionLinkView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.alignment = textAlignment == .left ? .left : .right
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.62)
         shadow.shadowBlurRadius = 0.45

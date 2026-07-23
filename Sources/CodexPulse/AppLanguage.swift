@@ -249,6 +249,41 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    func alignTaskActivityText(to alignment: TaskActivityTextAlignment) -> String {
+        switch self {
+        case .simplifiedChineseMainland:
+            switch alignment {
+            case .auto: "自动对齐任务活动面板文字"
+            case .left: "左对齐任务活动面板文字"
+            case .right: "右对齐任务活动面板文字"
+            }
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan:
+            switch alignment {
+            case .auto: "自動對齊任務活動面板文字"
+            case .left: "將任務活動面板文字靠左對齊"
+            case .right: "將任務活動面板文字靠右對齊"
+            }
+        case .japanese:
+            switch alignment {
+            case .auto: "タスクアクティビティパネルの文字を自動配置する"
+            case .left: "タスクアクティビティパネルの文字を左揃えにする"
+            case .right: "タスクアクティビティパネルの文字を右揃えにする"
+            }
+        case .korean:
+            switch alignment {
+            case .auto: "작업 활동 패널 텍스트 자동 정렬"
+            case .left: "작업 활동 패널 텍스트 왼쪽 정렬"
+            case .right: "작업 활동 패널 텍스트 오른쪽 정렬"
+            }
+        case .english:
+            switch alignment {
+            case .auto: "Automatically align Task Activity Panel text"
+            case .left: "Left-align Task Activity Panel text"
+            case .right: "Right-align Task Activity Panel text"
+            }
+        }
+    }
+
     func resizeLabel(_ panel: DockPanelIdentity, tooltip: Bool) -> String {
         switch self {
         case .simplifiedChineseMainland:

@@ -42,6 +42,9 @@ import Testing
         #expect(language.tokenCount(123).contains("123"))
         #expect(!language.movePanel(.usageOverview, to: .right).isEmpty)
         #expect(!language.swapPanelOrder(.taskActivity).isEmpty)
+        for alignment in TaskActivityTextAlignment.allCases {
+            #expect(!language.alignTaskActivityText(to: alignment).isEmpty)
+        }
         #expect(!language.resizeLabel(.usageOverview, tooltip: true).isEmpty)
         #expect(!language.openSession("Session").isEmpty)
     }

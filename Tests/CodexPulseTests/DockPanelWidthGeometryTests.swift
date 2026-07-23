@@ -58,7 +58,8 @@ import Testing
             verticalOrder: .taskAboveUsage
         ),
         usageOverviewPreferredWidth: 412,
-        taskActivityPreferredWidth: 528
+        taskActivityPreferredWidth: 528,
+        taskActivityTextAlignment: .right
     )
 
     expected.save(to: defaults)
@@ -74,12 +75,50 @@ import Testing
     defaults.set("sideways", forKey: "dockPanels.verticalOrder")
     defaults.set(100, forKey: "dockPanels.usageOverview.preferredWidth")
     defaults.set(Double.infinity, forKey: "dockPanels.taskActivity.preferredWidth")
+    defaults.set("center", forKey: "dockPanels.taskActivity.textAlignment")
 
     let preferences = DockPanelPreferences(defaults: defaults)
 
     #expect(preferences.arrangement == PanelArrangement())
     #expect(preferences.usageOverviewPreferredWidth == DockPanelWidthGeometry.defaultWidth)
     #expect(preferences.taskActivityPreferredWidth == DockPanelWidthGeometry.defaultWidth)
+    #expect(preferences.taskActivityTextAlignment == .auto)
+}
+
+@Test func taskActivityTextAlignmentDefaultsToTaskPanelSide() throws {
+    for side in PanelSide.allCases {
+        let suiteName = "CodexPulseTests.TaskTextAlignment.\(side).\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(side == .left ? "left" : "right", forKey: "dockPanels.taskActivity.side")
+
+        let preferences = DockPanelPreferences(defaults: defaults)
+
+        #expect(preferences.taskActivityTextAlignment == .auto)
+        #expect(preferences.taskActivityTextAlignment.resolved(for: side) == (side == .left ? .left : .right))
+    }
+}
+
+@Test func taskActivityTextAlignmentControlCyclesAutoLeftAndRight() {
+    var alignment = TaskActivityTextAlignment.auto
+    let autoPresentation = alignment.controlPresentation(language: .simplifiedChineseMainland)
+    #expect(autoPresentation.systemImageName == "text.justify")
+    #expect(autoPresentation.label == "左对齐任务活动面板文字")
+
+    alignment.advance()
+
+    let leftPresentation = alignment.controlPresentation(language: .simplifiedChineseMainland)
+    #expect(leftPresentation.systemImageName == "text.alignleft")
+    #expect(leftPresentation.label == "右对齐任务活动面板文字")
+
+    alignment.advance()
+
+    let rightPresentation = alignment.controlPresentation(language: .simplifiedChineseMainland)
+    #expect(rightPresentation.systemImageName == "text.alignright")
+    #expect(rightPresentation.label == "自动对齐任务活动面板文字")
+
+    alignment.advance()
+    #expect(alignment == .auto)
 }
 
 @Test func dockPanelActualWidthRecoversPreferredWidthWhenSpaceReturns() {
