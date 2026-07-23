@@ -1080,12 +1080,12 @@ struct TaskExecutionView: View {
                                     if alignTrailing {
                                         TaskDurationText(task: task)
                                         Spacer(minLength: 2)
+                                        TaskMessageText(task: task, textAlignment: .trailing)
                                         TaskStatusIndicator(
                                             isCompleted: task.isCompleted,
                                             isAnimationPaused: model.isTaskStatusAnimationPaused,
                                             language: languageSettings.language
                                         )
-                                        TaskMessageText(task: task, textAlignment: .trailing)
                                     } else {
                                         TaskStatusIndicator(
                                             isCompleted: task.isCompleted,
