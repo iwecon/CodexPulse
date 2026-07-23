@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="cloud" x1="354" y1="252" x2="674" y2="790" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C5B9FF"/>
+      <stop offset=".35" stop-color="#7784FF"/>
+      <stop offset=".72" stop-color="#4756F5"/>
+      <stop offset="1" stop-color="#2635CF"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="512" y1="246" x2="512" y2="788" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white" stop-opacity=".9"/>
+      <stop offset=".35" stop-color="#DDE1FF" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#8190FF" stop-opacity=".18"/>
+    </linearGradient>
+  </defs>
+  <path d="M327 752c-118 0-214-96-214-214 0-103 73-189 170-209 40-106 142-181 262-181 134 0 246 94 274 220 62 36 104 103 104 180 0 113-92 204-205 204H327Z" fill="url(#cloud)"/>
+  <path d="M327 752c-118 0-214-96-214-214 0-103 73-189 170-209 40-106 142-181 262-181 134 0 246 94 274 220 62 36 104 103 104 180 0 113-92 204-205 204H327Z" fill="none" stroke="url(#rim)" stroke-width="10"/>
+</svg>

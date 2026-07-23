@@ -42,6 +42,9 @@ ABSOLUTE_OUTPUT_DIR="$(cd "$REPOSITORY_ROOT" && mkdir -p "$OUTPUT_DIR" && cd "$O
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/codex-pulse-package.XXXXXX")"
 APP_DIR="$WORK_DIR/Codex Pulse.app"
 CONTENTS_DIR="$APP_DIR/Contents"
+ICON_NAME="Codex Pulse Icon"
+ICON_SOURCE="$REPOSITORY_ROOT/IconAssets/$ICON_NAME.icon"
+ICON_INFO_PLIST="$WORK_DIR/assetcatalog_generated_info.plist"
 DMG_ROOT="$WORK_DIR/dmg"
 DMG_PATH="$ABSOLUTE_OUTPUT_DIR/Codex-Pulse-$ARCH.dmg"
 
@@ -65,8 +68,27 @@ if ! lipo -archs "$EXECUTABLE" | tr ' ' '\n' | grep -qx "$ARCH"; then
   exit 1
 fi
 
+if [[ ! -d "$ICON_SOURCE" ]]; then
+  echo "Icon Composer document not found at $ICON_SOURCE" >&2
+  exit 1
+fi
+
 mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources" "$DMG_ROOT"
 ditto "$EXECUTABLE" "$CONTENTS_DIR/MacOS/Codex Pulse"
+xcrun actool "$ICON_SOURCE" \
+  --compile "$CONTENTS_DIR/Resources" \
+  --output-format human-readable-text \
+  --notices \
+  --warnings \
+  --errors \
+  --output-partial-info-plist "$ICON_INFO_PLIST" \
+  --app-icon "$ICON_NAME" \
+  --include-all-app-icons \
+  --enable-on-demand-resources NO \
+  --development-region zh_CN \
+  --target-device mac \
+  --minimum-deployment-target 26.0 \
+  --platform macosx
 
 PLIST="$CONTENTS_DIR/Info.plist"
 plutil -create xml1 "$PLIST"
@@ -74,6 +96,8 @@ plutil -insert CFBundleDevelopmentRegion -string "zh_CN" "$PLIST"
 plutil -insert CFBundleExecutable -string "Codex Pulse" "$PLIST"
 plutil -insert CFBundleIdentifier -string "com.iwecon.CodexPulse" "$PLIST"
 plutil -insert CFBundleInfoDictionaryVersion -string "6.0" "$PLIST"
+plutil -insert CFBundleIconFile -string "$(plutil -extract CFBundleIconFile raw "$ICON_INFO_PLIST")" "$PLIST"
+plutil -insert CFBundleIconName -string "$(plutil -extract CFBundleIconName raw "$ICON_INFO_PLIST")" "$PLIST"
 plutil -insert CFBundleName -string "Codex Pulse" "$PLIST"
 plutil -insert CFBundleDisplayName -string "Codex Pulse" "$PLIST"
 plutil -insert CFBundlePackageType -string "APPL" "$PLIST"

@@ -1,0 +1,53 @@
+{
+  "fill" : {
+    "linear-gradient" : [
+      "display-p3:0.23535,0.56110,1.00000,1.00000",
+      "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+    ]
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : true
+            }
+          ],
+          "image-name" : "glyph.svg",
+          "name" : "glyph"
+        },
+        {
+          "glass" : true,
+          "image-name" : "cloud.svg",
+          "name" : "cloud"
+        },
+        {
+          "glass" : false,
+          "hidden" : false,
+          "image-name" : "orbits.svg",
+          "name" : "orbits"
+        },
+        {
+          "image-name" : "background.svg",
+          "name" : "background"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
