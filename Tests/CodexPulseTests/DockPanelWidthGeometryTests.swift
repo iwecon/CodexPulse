@@ -299,9 +299,27 @@ import Testing
             let actionRegionMaxX = side == .left ? resize.minX : bounds.maxX
             #expect(actions.first?.minX == actionRegionMinX + (side == .left ? DockPanelOverlayGeometry.controlPadding : 0))
             #expect(actions.last?.maxX == actionRegionMaxX - (side == .right ? DockPanelOverlayGeometry.controlPadding : 0))
+            #expect(DockPanelOverlayGeometry.actionSurfacesContain(
+                CGPoint(x: actions[0].midX, y: actions[0].midY),
+                in: bounds,
+                side: side,
+                actionCount: count
+            ))
+            #expect(!DockPanelOverlayGeometry.actionSurfacesContain(
+                CGPoint(x: resize.midX, y: resize.midY),
+                in: bounds,
+                side: side,
+                actionCount: count
+            ))
             if count == 2 {
                 #expect(actions[1].minX - actions[0].maxX == DockPanelOverlayGeometry.controlGap)
                 #expect(actions[0].width == actions[1].width)
+                #expect(!DockPanelOverlayGeometry.actionSurfacesContain(
+                    CGPoint(x: actions[0].maxX + DockPanelOverlayGeometry.controlGap / 2, y: actions[0].midY),
+                    in: bounds,
+                    side: side,
+                    actionCount: count
+                ))
             }
         }
     }
@@ -311,6 +329,31 @@ import Testing
     #expect(DockPanelOverlayGeometry.controlPadding == 6)
     #expect(DockPanelOverlayGeometry.resizeWidth == 34)
     #expect(DockPanelOverlayGeometry.resizeHitWidth == 46)
+}
+
+@Test func resizeFocusPresentationFadesActionsAndContractsBackgroundByItsPadding() {
+    let bounds = CGRect(x: 0, y: 0, width: 430, height: 100)
+    let normal = DockPanelInteractionPresentation.resolve(
+        in: bounds,
+        resizeFocused: false
+    )
+    let focused = DockPanelInteractionPresentation.resolve(
+        in: bounds,
+        resizeFocused: true
+    )
+
+    #expect(normal.backgroundFrame == bounds)
+    #expect(normal.backgroundCornerRadius == 16)
+    #expect(normal.backgroundAlpha == 1)
+    #expect(normal.actionsAlpha == 1)
+    #expect(normal.actionsScale == 1)
+    #expect(focused.backgroundFrame == bounds.insetBy(dx: 6, dy: 6))
+    #expect(focused.backgroundCornerRadius == 10)
+    #expect(focused.backgroundAlpha == 0)
+    #expect(focused.actionsAlpha == 0)
+    #expect(focused.actionsScale == 0.98)
+
+    #expect(DockPanelOverlayGeometry.resizeFocusAnimationDuration == 0.34)
 }
 
 @Test func expandedInteractionGeometryClampsToScreenHorizontally() {

@@ -447,6 +447,8 @@ struct DockPanelOverlayGeometry {
     static let actionCornerRadius: CGFloat = 10
     static let controlGap: CGFloat = 6
     static let controlPadding: CGFloat = 6
+    static let resizeFocusAnimationDuration: TimeInterval = 0.34
+    static let resizeFocusedActionScale: CGFloat = 0.98
     static var resizeHitWidth: CGFloat { resizeWidth + 2 * controlPadding }
 
     static func interactionHeight(
@@ -523,6 +525,50 @@ struct DockPanelOverlayGeometry {
             )
         }
     }
+
+    static func actionSurfacesContain(
+        _ point: CGPoint,
+        in bounds: CGRect,
+        side: PanelSide,
+        actionCount: Int
+    ) -> Bool {
+        actionSurfaceFrames(in: bounds, side: side, actionCount: actionCount)
+            .contains { $0.contains(point) }
+    }
+}
+
+struct DockPanelInteractionPresentation: Equatable {
+    let backgroundFrame: CGRect
+    let backgroundCornerRadius: CGFloat
+    let backgroundAlpha: CGFloat
+    let actionsAlpha: CGFloat
+    let actionsScale: CGFloat
+
+    static func resolve(
+        in bounds: CGRect,
+        resizeFocused: Bool
+    ) -> Self {
+        guard resizeFocused else {
+            return Self(
+                backgroundFrame: bounds,
+                backgroundCornerRadius: DockPanelOverlayGeometry.outerCornerRadius,
+                backgroundAlpha: 1,
+                actionsAlpha: 1,
+                actionsScale: 1
+            )
+        }
+
+        return Self(
+            backgroundFrame: bounds.insetBy(
+                dx: DockPanelOverlayGeometry.controlPadding,
+                dy: DockPanelOverlayGeometry.controlPadding
+            ),
+            backgroundCornerRadius: DockPanelOverlayGeometry.actionCornerRadius,
+            backgroundAlpha: 0,
+            actionsAlpha: 0,
+            actionsScale: DockPanelOverlayGeometry.resizeFocusedActionScale
+        )
+    }
 }
 
 @MainActor
@@ -568,6 +614,8 @@ final class DockPanelResizeController {
     private var visibleHandle: DockPanelIdentity?
     private var draggingHandle: DockPanelIdentity?
     private var resizeFocusedHandle: DockPanelIdentity?
+    private var resizeFocusTransitioningHandle: DockPanelIdentity?
+    private var resizeFocusTransitionGeneration = 0
 
     init(
         panelFrame: @escaping PanelFrameProvider,
@@ -621,7 +669,7 @@ final class DockPanelResizeController {
             },
             onResizeExited: { [weak self] in
                 guard let self, draggingHandle != identity else { return }
-                setResizeFocus(false, for: identity)
+                restoreActionsIfPointerIsOverThem(for: identity)
             },
             onDragBegan: { [weak self] mouseX in
                 guard let self else { return }
@@ -639,8 +687,7 @@ final class DockPanelResizeController {
                 guard let self else { return }
                 onDragEnded(identity, mouseX)
                 draggingHandle = nil
-                let remainsInResizeRegion = interactionPanels[identity]?.frame.contains(NSEvent.mouseLocation) == true
-                setResizeFocus(remainsInResizeRegion, for: identity)
+                restoreActionsIfPointerIsOverThem(for: identity)
                 pollCursor()
             },
             onToggleSide: { [weak self] in
@@ -686,9 +733,8 @@ final class DockPanelResizeController {
 
         let cursor = NSEvent.mouseLocation
         if let visibleHandle {
-            if resizeFocusedHandle == visibleHandle,
-               interactionPanels[visibleHandle]?.frame.contains(cursor) != true {
-                setResizeFocus(false, for: visibleHandle)
+            if resizeFocusedHandle == visibleHandle {
+                restoreActionsIfPointerIsOverThem(for: visibleHandle, cursor: cursor)
             }
             let isInsideInteractionRange = panelFrame(visibleHandle).contains(cursor)
                 || interactionPanels[visibleHandle]?.frame.contains(cursor) == true
@@ -718,6 +764,30 @@ final class DockPanelResizeController {
         ) else { return }
         showHandle(readyCandidate)
         pointerDwell.reset()
+    }
+
+    private func restoreActionsIfPointerIsOverThem(
+        for identity: DockPanelIdentity,
+        cursor: CGPoint = NSEvent.mouseLocation
+    ) {
+        guard resizeFocusedHandle == identity,
+              let metrics,
+              let interactionView = interactionViews[identity] else { return }
+        let side = panelSide(identity)
+        let frame = DockPanelOverlayGeometry.expandedFrame(
+            parentFrame: panelFrame(identity),
+            side: side,
+            metrics: metrics
+        )
+        let localPoint = CGPoint(x: cursor.x - frame.minX, y: cursor.y - frame.minY)
+        let bounds = CGRect(origin: .zero, size: frame.size)
+        guard DockPanelOverlayGeometry.actionSurfacesContain(
+            localPoint,
+            in: bounds,
+            side: side,
+            actionCount: interactionView.visibleButtonCount
+        ) else { return }
+        setResizeFocus(false, for: identity)
     }
 
     private func showHandle(_ identity: DockPanelIdentity) {
@@ -780,8 +850,10 @@ final class DockPanelResizeController {
 
     private func hideHandleImmediately() {
         hideGeneration += 1
+        resizeFocusTransitionGeneration += 1
         hideBeganAt = nil
         isFading = false
+        resizeFocusTransitioningHandle = nil
         if let visibleHandle {
             interactionPanels[visibleHandle]?.orderOut(nil)
             interactionPanels[visibleHandle]?.alphaValue = 1
@@ -790,15 +862,43 @@ final class DockPanelResizeController {
         resizeFocusedHandle = nil
     }
 
-    private func updateOverlays(_ identity: DockPanelIdentity) {
+    private func updateOverlays(_ identity: DockPanelIdentity, animated: Bool = false) {
         let verticalPresentation = verticalSwapPresentation(identity)
-        interactionViews[identity]?.update(
-            side: panelSide(identity),
-            sideToggle: sideTogglePresentation(identity),
-            verticalSwap: verticalPresentation,
-            resizeFocused: resizeFocusedHandle == identity
-        )
-        positionOverlays(identity)
+        let updateView = { [self] (completion: (@MainActor @Sendable () -> Void)?) in
+            interactionViews[identity]?.update(
+                side: panelSide(identity),
+                sideToggle: sideTogglePresentation(identity),
+                verticalSwap: verticalPresentation,
+                resizeFocused: resizeFocusedHandle == identity,
+                animated: animated,
+                completion: completion
+            )
+        }
+
+        guard animated else {
+            if resizeFocusTransitioningHandle != identity {
+                updateView(nil)
+            }
+            positionOverlays(identity)
+            return
+        }
+
+        resizeFocusTransitionGeneration += 1
+        let generation = resizeFocusTransitionGeneration
+        if resizeFocusedHandle == identity {
+            resizeFocusTransitioningHandle = identity
+            updateView { [weak self] in
+                guard let self,
+                      resizeFocusTransitionGeneration == generation,
+                      resizeFocusedHandle == identity else { return }
+                resizeFocusTransitioningHandle = nil
+                positionOverlays(identity)
+            }
+        } else {
+            resizeFocusTransitioningHandle = nil
+            positionOverlays(identity)
+            updateView(nil)
+        }
     }
 
     private func positionOverlays(_ identity: DockPanelIdentity) {
@@ -807,7 +907,7 @@ final class DockPanelResizeController {
               interactionViews[identity] != nil else { return }
         let parentFrame = panelFrame(identity)
         let side = panelSide(identity)
-        let frame = resizeFocusedHandle == identity
+        let frame = resizeFocusedHandle == identity && resizeFocusTransitioningHandle != identity
             ? DockPanelOverlayGeometry.resizeOnlyFrame(parentFrame: parentFrame, side: side, metrics: metrics)
             : DockPanelOverlayGeometry.expandedFrame(
                 parentFrame: parentFrame,
@@ -823,7 +923,7 @@ final class DockPanelResizeController {
         guard wasFocused != focused else { return }
         resizeFocusedHandle = focused ? identity : nil
         cancelPendingHide()
-        updateOverlays(identity)
+        updateOverlays(identity, animated: true)
     }
 }
 
@@ -839,6 +939,8 @@ private final class DockPanelInteractionView: NSView {
     private let onToggleSide: () -> Void
     private let onToggleVerticalOrder: () -> Void
     private var side: PanelSide = .left
+    private var resizeFocused = false
+    private var presentationGeneration = 0
 
     var visibleButtonCount: Int { verticalButton.isHidden ? 1 : 2 }
 
@@ -866,12 +968,13 @@ private final class DockPanelInteractionView: NSView {
 
         backgroundGlass.style = .regular
         configureContinuousCorners(backgroundGlass, radius: DockPanelOverlayGeometry.outerCornerRadius)
-        backgroundGlass.contentView = actionsView
+        actionsView.wantsLayer = true
         configure(sideSurface, button: sideButton, action: #selector(toggleSide))
         configure(verticalSurface, button: verticalButton, action: #selector(toggleVerticalOrder))
         actionsView.addSubview(sideSurface)
         actionsView.addSubview(verticalSurface)
         addSubview(backgroundGlass)
+        addSubview(actionsView)
         addSubview(resizeView)
     }
 
@@ -882,8 +985,12 @@ private final class DockPanelInteractionView: NSView {
 
     override func layout() {
         super.layout()
-        backgroundGlass.frame = bounds
-        actionsView.frame = backgroundGlass.bounds
+        let presentation = DockPanelInteractionPresentation.resolve(
+            in: bounds,
+            resizeFocused: resizeFocused
+        )
+        backgroundGlass.frame = presentation.backgroundFrame
+        actionsView.frame = bounds
         resizeView.frame = DockPanelOverlayGeometry.resizeRegionFrame(in: bounds, side: side)
         let frames = DockPanelOverlayGeometry.actionSurfaceFrames(
             in: bounds,
@@ -902,16 +1009,103 @@ private final class DockPanelInteractionView: NSView {
         side: PanelSide,
         sideToggle: PanelMovementPresentation,
         verticalSwap: PanelMovementPresentation?,
-        resizeFocused: Bool
+        resizeFocused: Bool,
+        animated: Bool,
+        completion: (@MainActor @Sendable () -> Void)?
     ) {
         self.side = side
         apply(sideToggle, to: sideButton)
         verticalButton.isHidden = verticalSwap == nil
         verticalSurface.isHidden = verticalSwap == nil
         if let verticalSwap { apply(verticalSwap, to: verticalButton) }
-        backgroundGlass.isHidden = resizeFocused
         needsLayout = true
         layoutSubtreeIfNeeded()
+        self.resizeFocused = resizeFocused
+        presentationGeneration += 1
+        let generation = presentationGeneration
+        if !resizeFocused {
+            backgroundGlass.isHidden = false
+        }
+        applyPresentation(animated: animated, generation: generation, completion: completion)
+    }
+
+    private func applyPresentation(
+        animated: Bool,
+        generation: Int,
+        completion: (@MainActor @Sendable () -> Void)?
+    ) {
+        let presentation = DockPanelInteractionPresentation.resolve(
+            in: bounds,
+            resizeFocused: resizeFocused
+        )
+        let changes = {
+            self.backgroundGlass.animator().frame = presentation.backgroundFrame
+            self.backgroundGlass.animator().alphaValue = presentation.backgroundAlpha
+            self.actionsView.animator().alphaValue = presentation.actionsAlpha
+        }
+
+        animateActionsScale(to: presentation.actionsScale, animated: animated)
+        animateBackgroundCornerRadius(to: presentation.backgroundCornerRadius, animated: animated)
+
+        guard animated else {
+            backgroundGlass.frame = presentation.backgroundFrame
+            backgroundGlass.alphaValue = presentation.backgroundAlpha
+            actionsView.alphaValue = presentation.actionsAlpha
+            backgroundGlass.isHidden = resizeFocused
+            completion?()
+            return
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = DockPanelOverlayGeometry.resizeFocusAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            changes()
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self,
+                      self.presentationGeneration == generation else { return }
+                if self.resizeFocused {
+                    self.backgroundGlass.isHidden = true
+                }
+                completion?()
+            }
+        }
+    }
+
+    private func animateActionsScale(to scale: CGFloat, animated: Bool) {
+        guard let layer = actionsView.layer else { return }
+        let target = CATransform3DMakeScale(scale, scale, 1)
+        guard animated else {
+            layer.removeAnimation(forKey: "resizeFocusScale")
+            layer.transform = target
+            return
+        }
+
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = layer.presentation()?.transform ?? layer.transform
+        animation.toValue = target
+        animation.duration = DockPanelOverlayGeometry.resizeFocusAnimationDuration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.transform = target
+        layer.add(animation, forKey: "resizeFocusScale")
+    }
+
+    private func animateBackgroundCornerRadius(to radius: CGFloat, animated: Bool) {
+        guard let layer = backgroundGlass.layer else { return }
+        let currentRadius = layer.presentation()?.cornerRadius ?? layer.cornerRadius
+        backgroundGlass.cornerRadius = radius
+        layer.cornerRadius = radius
+        guard animated else {
+            layer.removeAnimation(forKey: "resizeFocusCornerRadius")
+            return
+        }
+
+        let animation = CABasicAnimation(keyPath: "cornerRadius")
+        animation.fromValue = currentRadius
+        animation.toValue = radius
+        animation.duration = DockPanelOverlayGeometry.resizeFocusAnimationDuration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(animation, forKey: "resizeFocusCornerRadius")
     }
 
     private func configure(_ surface: NSGlassEffectView, button: NSButton, action: Selector) {
