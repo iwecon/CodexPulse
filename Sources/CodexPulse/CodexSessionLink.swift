@@ -29,7 +29,11 @@ final class CodexSessionLinkController {
         }
     }
 
-    func update(taskPanelFrame: CGRect, plan: TaskExecutionLayout.Plan) {
+    func update(
+        taskPanelFrame: CGRect,
+        plan: TaskExecutionLayout.Plan,
+        language: AppLanguage
+    ) {
         let links = TaskExecutionLayout.sessionLinks(for: plan, panelWidth: taskPanelFrame.width)
         let activeIDs = Set(links.map(\.id))
 
@@ -39,22 +43,26 @@ final class CodexSessionLinkController {
         }
 
         for link in links {
-            let panel = panels[link.id] ?? makePanel(threadID: link.threadID, title: link.title)
+            let panel = panels[link.id] ?? makePanel(
+                threadID: link.threadID,
+                title: link.title,
+                language: language
+            )
             panels[link.id] = panel
-            (panel.contentView as? CodexSessionLinkView)?.update(title: link.title)
+            (panel.contentView as? CodexSessionLinkView)?.update(title: link.title, language: language)
             panel.setFrame(link.frame.offsetBy(dx: taskPanelFrame.minX, dy: taskPanelFrame.minY), display: true)
             panel.orderFrontRegardless()
         }
     }
 
-    private func makePanel(threadID: String, title: String) -> NSPanel {
+    private func makePanel(threadID: String, title: String, language: AppLanguage) -> NSPanel {
         let panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        panel.contentView = CodexSessionLinkView(threadID: threadID, title: title)
+        panel.contentView = CodexSessionLinkView(threadID: threadID, title: title, language: language)
         panel.appearance = appearance
         panel.backgroundColor = .clear
         panel.isOpaque = false
@@ -72,11 +80,16 @@ final class CodexSessionLinkController {
 private final class CodexSessionLinkView: NSView {
     private let threadID: String
     private var title: String
+    private var language: AppLanguage
 
-    init(threadID: String, title: String) {
+    init(threadID: String, title: String, language: AppLanguage) {
         self.threadID = threadID
         self.title = title
+        self.language = language
         super.init(frame: .zero)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.link)
+        updateAccessibility()
     }
 
     @available(*, unavailable)
@@ -86,9 +99,11 @@ private final class CodexSessionLinkView: NSView {
 
     override var isFlipped: Bool { true }
 
-    func update(title: String) {
-        guard self.title != title else { return }
+    func update(title: String, language: AppLanguage) {
+        guard self.title != title || self.language != language else { return }
         self.title = title
+        self.language = language
+        updateAccessibility()
         needsDisplay = true
     }
 
@@ -119,5 +134,11 @@ private final class CodexSessionLinkView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard let url = CodexThreadLink.url(threadID: threadID) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    private func updateAccessibility() {
+        let label = language.openSession(title)
+        setAccessibilityLabel(label)
+        toolTip = label
     }
 }

@@ -191,6 +191,7 @@ final class DockPanelController {
     private let rightPanel: NSPanel
     private let model: UsageModel
     private let presentationState: DockPanelPresentationState
+    private let languageSettings: AppLanguageSettings
     private let defaults: UserDefaults
     private var placementTimer: Timer?
     private var arrangement: PanelArrangement
@@ -217,11 +218,20 @@ final class DockPanelController {
             self?.arrangement.side(for: identity) ?? PanelArrangement().side(for: identity)
         },
         sideTogglePresentation: { [weak self] identity in
-            self?.arrangement.sideTogglePresentation(for: identity)
-                ?? PanelArrangement().sideTogglePresentation(for: identity)
+            self?.arrangement.sideTogglePresentation(
+                for: identity,
+                language: self?.languageSettings.language ?? .simplifiedChineseMainland
+            ) ?? PanelArrangement().sideTogglePresentation(for: identity)
         },
         verticalSwapPresentation: { [weak self] identity in
-            self?.arrangement.verticalSwapPresentation(for: identity)
+            guard let self else { return nil }
+            return arrangement.verticalSwapPresentation(for: identity, language: languageSettings.language)
+        },
+        language: { [weak self] in
+            self?.languageSettings.language ?? .simplifiedChineseMainland
+        },
+        onSelectLanguage: { [weak self] language in
+            self?.selectLanguage(language)
         },
         onToggleSide: { [weak self] identity in
             self?.togglePanelSide(identity)
@@ -248,6 +258,8 @@ final class DockPanelController {
         )
         self.model = model
         self.defaults = defaults
+        let languageSettings = AppLanguageSettings(defaults: defaults)
+        self.languageSettings = languageSettings
         arrangement = preferences.arrangement
         usageOverviewPreferredWidth = preferences.usageOverviewPreferredWidth
         taskActivityPreferredWidth = preferences.taskActivityPreferredWidth
@@ -255,11 +267,15 @@ final class DockPanelController {
         presentationState.usageSide = preferences.arrangement.usageSide
         self.presentationState = presentationState
         leftPanel = Self.panel(
-            rootView: AnyView(RecentUsageView(model: model, presentation: presentationState)),
+            rootView: AnyView(RecentUsageView(
+                model: model,
+                presentation: presentationState,
+                languageSettings: languageSettings
+            )),
             size: NSSize(width: preferences.usageOverviewPreferredWidth, height: 56)
         )
         rightPanel = Self.panel(
-            rootView: AnyView(TaskExecutionView(model: model)),
+            rootView: AnyView(TaskExecutionView(model: model, languageSettings: languageSettings)),
             size: NSSize(width: preferences.taskActivityPreferredWidth, height: taskPlan.panelHeight)
         )
         observedSystemAppearance = Self.currentSystemAppearance
@@ -372,7 +388,11 @@ final class DockPanelController {
         if let taskFrame = frames[.taskActivity] {
             if rightPanel.frame != taskFrame { rightPanel.setFrame(taskFrame, display: true) }
         }
-        sessionLinkController.update(taskPanelFrame: rightPanel.frame, plan: taskPlan)
+        sessionLinkController.update(
+            taskPanelFrame: rightPanel.frame,
+            plan: taskPlan,
+            language: languageSettings.language
+        )
         resizeController.panelFramesDidChange(metrics: DockPanelOverlayMetrics(
             screenFrame: frame,
             dockFrame: dockFrame,
@@ -606,6 +626,12 @@ final class DockPanelController {
         ).save(to: defaults)
     }
 
+    private func selectLanguage(_ language: AppLanguage) {
+        guard languageSettings.language != language else { return }
+        languageSettings.language = language
+        positionPanels()
+    }
+
     private func bottomDockFrame(on screen: NSScreen) -> CGRect? {
         guard let dockPID = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier,
               let mainScreen = NSScreen.screens.first,
@@ -664,6 +690,7 @@ private extension Text {
 struct RecentUsageView: View {
     @Bindable var model: UsageModel
     let presentation: DockPanelPresentationState
+    @Bindable var languageSettings: AppLanguageSettings
     private var days: [DailyUsage] { model.snapshot.dailyUsage }
     private var maximum: Int { max(days.map(\.total).max() ?? 0, 1) }
     private var total: Int { days.reduce(0) { $0 + $1.total } }
@@ -673,9 +700,9 @@ struct RecentUsageView: View {
             if presentation.usageSide == .left {
                 trendView
                 Divider().frame(height: 34)
-                WeeklyLimitView(model: model, alignTrailing: false)
+                WeeklyLimitView(model: model, alignTrailing: false, languageSettings: languageSettings)
             } else {
-                WeeklyLimitView(model: model, alignTrailing: true)
+                WeeklyLimitView(model: model, alignTrailing: true, languageSettings: languageSettings)
                 Divider().frame(height: 34)
                 trendView
             }
@@ -692,7 +719,7 @@ struct RecentUsageView: View {
     private var trendView: some View {
         VStack(alignment: presentation.usageSide == .left ? .leading : .trailing, spacing: 1) {
             HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text("近 14 天")
+                Text(languageSettings.language.recentFourteenDays)
                     .dockPanelTextShadow()
                     .font(.system(size: 10, weight: .semibold))
                 Spacer(minLength: 2)
@@ -707,17 +734,17 @@ struct RecentUsageView: View {
                         .fill(day.total == 0 ? Color.secondary.opacity(0.16) : Color.accentColor.opacity(0.38 + 0.62 * Double(day.total) / Double(maximum)))
                         .frame(maxWidth: .infinity)
                         .frame(height: 3 + 18 * CGFloat(day.total) / CGFloat(maximum))
-                        .accessibilityLabel(day.date.formatted(date: .abbreviated, time: .omitted))
-                        .accessibilityValue("\(day.total) tokens")
+                        .accessibilityLabel(languageSettings.language.accessibilityDate(day.date))
+                        .accessibilityValue(languageSettings.language.tokenCount(day.total))
                 }
             }
             .frame(height: 21, alignment: .bottom)
             HStack {
-                Text(days.first?.date.formatted(.dateTime.month().day()) ?? "—")
+                Text(days.first.map { languageSettings.language.shortDate($0.date) } ?? "—")
                     .dockPanelTextShadow()
                 Spacer()
                 HStack(spacing: 3) {
-                    Text(days.last?.date.formatted(.dateTime.month().day()) ?? "—")
+                    Text(days.last.map { languageSettings.language.shortDate($0.date) } ?? "—")
                         .dockPanelTextShadow()
                     Text(UsageModel.compact(days.last?.total ?? 0))
                         .dockPanelTextShadow()
@@ -735,6 +762,7 @@ struct WeeklyLimitView: View {
     private struct AverageDailyAvailableText: View {
         let used: Double
         let resetsAt: Date
+        let language: AppLanguage
 
         var body: some View {
             TimelineView(.periodic(from: .now, by: 60)) { context in
@@ -743,7 +771,7 @@ struct WeeklyLimitView: View {
                     resetsAt: resetsAt,
                     now: context.date
                 )
-                Text(String(format: "日均可用 %.1f%%", value))
+                Text(language.averageDailyAvailable(value))
                     .dockPanelTextShadow()
                     .monospacedDigit()
                     .lineLimit(1)
@@ -754,10 +782,11 @@ struct WeeklyLimitView: View {
 
     private struct CountdownText: View {
         let reset: Date
+        let language: AppLanguage
 
         var body: some View {
             TimelineView(.periodic(from: .now, by: 60)) { context in
-                Text(WeeklyLimitCountdown.format(reset: reset, now: context.date))
+                Text(WeeklyLimitCountdown.format(reset: reset, now: context.date, language: language))
                     .dockPanelTextShadow()
                     .fontWeight(.semibold)
                     .monospacedDigit()
@@ -768,6 +797,7 @@ struct WeeklyLimitView: View {
 
     @Bindable var model: UsageModel
     let alignTrailing: Bool
+    @Bindable var languageSettings: AppLanguageSettings
 
     private var weekly: RateWindow? {
         model.snapshot.limits
@@ -780,13 +810,13 @@ struct WeeklyLimitView: View {
             let used = min(max(weekly.used, 0), 100)
             VStack(alignment: alignTrailing ? .trailing : .leading, spacing: 2) {
                 HStack(spacing: 5) {
-                    Text("周限额")
+                    Text(languageSettings.language.weeklyLimit)
                         .dockPanelTextShadow()
                         .fontWeight(.semibold)
                     Spacer(minLength: 2)
-                    Text("已用 \(Int(used.rounded()))%")
+                    Text(languageSettings.language.usedPercent(Int(used.rounded())))
                         .dockPanelTextShadow()
-                    Text("剩余 \(Int((100 - used).rounded()))%")
+                    Text(languageSettings.language.remainingPercent(Int((100 - used).rounded())))
                         .dockPanelTextShadow()
                 }
                 .font(.system(size: 9))
@@ -801,23 +831,27 @@ struct WeeklyLimitView: View {
                 }
                 .frame(height: 4)
                 HStack(spacing: 4) {
-                    Text("重置 \(weekly.resetsAt.formatted(.dateTime.month().day().hour().minute()))")
+                    Text(languageSettings.language.resetText(weekly.resetsAt))
                         .dockPanelTextShadow()
                         .lineLimit(1)
                     Spacer(minLength: 2)
-                    AverageDailyAvailableText(used: used, resetsAt: weekly.resetsAt)
+                    AverageDailyAvailableText(
+                        used: used,
+                        resetsAt: weekly.resetsAt,
+                        language: languageSettings.language
+                    )
                 }
-                CountdownText(reset: weekly.resetsAt)
+                CountdownText(reset: weekly.resetsAt, language: languageSettings.language)
             }
             .font(.system(size: 8))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: alignTrailing ? .trailing : .leading)
         } else {
             VStack(alignment: alignTrailing ? .trailing : .leading, spacing: 2) {
-                Text("周额度")
+                Text(languageSettings.language.weeklyQuota)
                     .dockPanelTextShadow()
                     .fontWeight(.semibold)
-                Text("暂无数据")
+                Text(languageSettings.language.noData)
                     .dockPanelTextShadow()
                     .foregroundStyle(.secondary)
             }
@@ -828,21 +862,16 @@ struct WeeklyLimitView: View {
 }
 
 enum WeeklyLimitCountdown {
-    static func format(reset: Date, now: Date) -> String {
+    static func format(
+        reset: Date,
+        now: Date,
+        language: AppLanguage = .simplifiedChineseMainland
+    ) -> String {
         let totalSeconds = max(0, Int(reset.timeIntervalSince(now)))
         let days = totalSeconds / 86_400
         let hours = (totalSeconds % 86_400) / 3_600
         let minutes = (totalSeconds % 3_600) / 60
-        if days > 0 {
-            return "倒计时 \(days)天 \(hours)小时"
-        }
-        if hours > 0 {
-            return "倒计时 \(hours)小时 \(minutes)分钟"
-        }
-        if minutes > 0 {
-            return "倒计时 \(minutes)分钟"
-        }
-        return "倒计时 小于1分钟"
+        return language.countdown(days: days, hours: hours, minutes: minutes)
     }
 }
 
@@ -863,10 +892,13 @@ enum WeeklyLimitPacing {
 
 struct TaskExecutionView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Bindable var model: UsageModel
+    @Bindable var languageSettings: AppLanguageSettings
 
     private struct TaskStatusIndicator: View {
         let isCompleted: Bool
         let isAnimationPaused: Bool
+        let language: AppLanguage
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
@@ -880,6 +912,7 @@ struct TaskExecutionView: View {
                 }
             }
             .frame(width: 9, height: 9)
+            .accessibilityLabel(isCompleted ? language.completedTask : language.runningTask)
         }
 
         private var loadingRing: some View {
@@ -961,8 +994,6 @@ struct TaskExecutionView: View {
         }
     }
 
-    @Bindable var model: UsageModel
-
     var body: some View {
         GeometryReader { proxy in
             let plan = TaskExecutionLayout.plan(for: model.tasks, panelWidth: proxy.size.width)
@@ -975,7 +1006,7 @@ struct TaskExecutionView: View {
             )
             VStack(alignment: .leading, spacing: 0) {
                 if plan.projects.isEmpty {
-                    Text("近10分钟没有活动任务")
+                    Text(languageSettings.language.noRecentTasks)
                         .dockPanelTextShadow()
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
@@ -1001,7 +1032,8 @@ struct TaskExecutionView: View {
                                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                                     TaskStatusIndicator(
                                         isCompleted: task.isCompleted,
-                                        isAnimationPaused: model.isTaskStatusAnimationPaused
+                                        isAnimationPaused: model.isTaskStatusAnimationPaused,
+                                        language: languageSettings.language
                                     )
                                     TaskMessageText(task: task)
                                     Spacer(minLength: 2)

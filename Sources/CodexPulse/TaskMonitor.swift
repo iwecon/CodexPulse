@@ -111,7 +111,7 @@ actor TaskMonitor {
                 : singleLineTitle
             result.append(ThreadSource(
                 id: String(cString: id),
-                title: displayTitle.isEmpty ? "Codex 任务" : displayTitle,
+                title: displayTitle.isEmpty ? "Codex" : displayTitle,
                 projectName: Self.projectName(from: String(cString: cwd)),
                 path: String(cString: path)
             ))

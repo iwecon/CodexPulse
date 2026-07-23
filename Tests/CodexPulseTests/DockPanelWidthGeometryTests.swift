@@ -275,9 +275,9 @@ import Testing
     #expect(rightResizeOnly.minX + DockPanelOverlayGeometry.controlPadding == parent.minX)
 }
 
-@Test func interactionActionsFillPaddedAreaAndMirrorForBothCounts() {
+@Test func interactionActionsFillPaddedAreaAndMirrorForSupportedCounts() {
     for side in PanelSide.allCases {
-        for count in 1...2 {
+        for count in 1...3 {
             let bounds = CGRect(
                 x: 0,
                 y: 0,
@@ -321,6 +321,12 @@ import Testing
                     actionCount: count
                 ))
             }
+            if count == 3 {
+                #expect(actions[1].minX - actions[0].maxX == DockPanelOverlayGeometry.controlGap)
+                #expect(actions[2].minX - actions[1].maxX == DockPanelOverlayGeometry.controlGap)
+                #expect(actions[0].width == actions[1].width)
+                #expect(actions[1].width == actions[2].width)
+            }
         }
     }
 
@@ -354,6 +360,33 @@ import Testing
     #expect(focused.actionsScale == 0.98)
 
     #expect(DockPanelOverlayGeometry.resizeFocusAnimationDuration == 0.34)
+}
+
+@Test func languagePickerRowsUseCompactSpacingAndTopPadding() {
+    let bounds = CGRect(x: 0, y: 0, width: 240, height: 68)
+    let top = DockPanelLanguagePickerGeometry.rowFrame(offset: -1, in: bounds)
+    let selected = DockPanelLanguagePickerGeometry.rowFrame(offset: 0, in: bounds)
+    let bottom = DockPanelLanguagePickerGeometry.rowFrame(offset: 1, in: bounds)
+
+    #expect(DockPanelLanguagePickerGeometry.topPadding == 4)
+    #expect(selected.midY == bounds.midY + DockPanelLanguagePickerGeometry.topPadding)
+    #expect(selected.midY - top.midY == DockPanelLanguagePickerGeometry.itemSpacing)
+    #expect(bottom.midY - selected.midY == DockPanelLanguagePickerGeometry.itemSpacing)
+    #expect(DockPanelLanguagePickerGeometry.itemSpacing < bounds.height / 3)
+    #expect(top.minY > bounds.minY)
+    #expect(bottom.maxY < bounds.maxY)
+}
+
+@Test func languagePickerClickMapsToVisibleRows() {
+    let bounds = CGRect(x: 0, y: 0, width: 240, height: 68)
+    let top = DockPanelLanguagePickerGeometry.rowFrame(offset: -1, in: bounds)
+    let selected = DockPanelLanguagePickerGeometry.rowFrame(offset: 0, in: bounds)
+    let bottom = DockPanelLanguagePickerGeometry.rowFrame(offset: 1, in: bounds)
+
+    #expect(DockPanelLanguagePickerGeometry.selectionOffset(forClickY: top.midY, in: bounds) == -1)
+    #expect(DockPanelLanguagePickerGeometry.selectionOffset(forClickY: selected.midY, in: bounds) == 0)
+    #expect(DockPanelLanguagePickerGeometry.selectionOffset(forClickY: bottom.midY, in: bounds) == 1)
+    #expect(DockPanelLanguagePickerGeometry.dragStep < DockPanelLanguagePickerGeometry.itemSpacing)
 }
 
 @Test func expandedInteractionGeometryClampsToScreenHorizontally() {

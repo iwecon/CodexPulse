@@ -57,22 +57,25 @@ struct PanelArrangement: Equatable {
         }
     }
 
-    func sideTogglePresentation(for panel: DockPanelIdentity) -> PanelMovementPresentation {
+    func sideTogglePresentation(
+        for panel: DockPanelIdentity,
+        language: AppLanguage = .simplifiedChineseMainland
+    ) -> PanelMovementPresentation {
         let target: PanelSide = side(for: panel) == .left ? .right : .left
-        let direction = target == .left ? "左侧" : "右侧"
         return PanelMovementPresentation(
             systemImageName: target == .left ? "arrow.left" : "arrow.right",
-            label: panel == .usageOverview
-                ? "将用量概览面板移到\(direction)"
-                : "将任务活动面板移到\(direction)"
+            label: language.movePanel(panel, to: target)
         )
     }
 
-    func verticalSwapPresentation(for panel: DockPanelIdentity) -> PanelMovementPresentation? {
+    func verticalSwapPresentation(
+        for panel: DockPanelIdentity,
+        language: AppLanguage = .simplifiedChineseMainland
+    ) -> PanelMovementPresentation? {
         guard isColocated else { return nil }
         return PanelMovementPresentation(
             systemImageName: "arrow.up.arrow.down",
-            label: panel == .usageOverview ? "交换用量概览面板的上下位置" : "交换任务活动面板的上下位置"
+            label: language.swapPanelOrder(panel)
         )
     }
 }
@@ -588,6 +591,8 @@ final class DockPanelResizeController {
     typealias OptionalPresentationProvider = @MainActor (DockPanelIdentity) -> PanelMovementPresentation?
     typealias DragHandler = @MainActor (DockPanelIdentity, CGFloat) -> Void
     typealias ActionHandler = @MainActor (DockPanelIdentity) -> Void
+    typealias LanguageProvider = @MainActor () -> AppLanguage
+    typealias LanguageHandler = @MainActor (AppLanguage) -> Void
 
     nonisolated static let hoverDelay: TimeInterval = 0.5
     nonisolated static let hideDelay: TimeInterval = 1
@@ -598,6 +603,8 @@ final class DockPanelResizeController {
     private let panelSide: SideProvider
     private let sideTogglePresentation: PresentationProvider
     private let verticalSwapPresentation: OptionalPresentationProvider
+    private let language: LanguageProvider
+    private let onSelectLanguage: LanguageHandler
     private let onToggleSide: ActionHandler
     private let onToggleVerticalOrder: ActionHandler
     private let onDragBegan: DragHandler
@@ -622,6 +629,8 @@ final class DockPanelResizeController {
         panelSide: @escaping SideProvider,
         sideTogglePresentation: @escaping PresentationProvider,
         verticalSwapPresentation: @escaping OptionalPresentationProvider,
+        language: @escaping LanguageProvider,
+        onSelectLanguage: @escaping LanguageHandler,
         onToggleSide: @escaping ActionHandler,
         onToggleVerticalOrder: @escaping ActionHandler,
         onDragBegan: @escaping DragHandler,
@@ -632,6 +641,8 @@ final class DockPanelResizeController {
         self.panelSide = panelSide
         self.sideTogglePresentation = sideTogglePresentation
         self.verticalSwapPresentation = verticalSwapPresentation
+        self.language = language
+        self.onSelectLanguage = onSelectLanguage
         self.onToggleSide = onToggleSide
         self.onToggleVerticalOrder = onToggleVerticalOrder
         self.onDragBegan = onDragBegan
@@ -701,6 +712,15 @@ final class DockPanelResizeController {
                 cancelPendingHide()
                 onToggleVerticalOrder(identity)
                 updateOverlays(identity)
+            },
+            language: language(),
+            onSelectLanguage: { [weak self] selectedLanguage in
+                guard let self else { return }
+                cancelPendingHide()
+                onSelectLanguage(selectedLanguage)
+                for panelIdentity in DockPanelIdentity.allCases {
+                    updateOverlays(panelIdentity)
+                }
             }
         )
     }
@@ -840,6 +860,7 @@ final class DockPanelResizeController {
                       self.hideBeganAt != nil else { return }
                 self.interactionPanels[identity]?.orderOut(nil)
                 self.interactionPanels[identity]?.alphaValue = 1
+                self.interactionViews[identity]?.dismissLanguagePicker()
                 self.visibleHandle = nil
                 self.resizeFocusedHandle = nil
                 self.hideBeganAt = nil
@@ -857,6 +878,7 @@ final class DockPanelResizeController {
         if let visibleHandle {
             interactionPanels[visibleHandle]?.orderOut(nil)
             interactionPanels[visibleHandle]?.alphaValue = 1
+            interactionViews[visibleHandle]?.dismissLanguagePicker()
         }
         visibleHandle = nil
         resizeFocusedHandle = nil
@@ -869,6 +891,7 @@ final class DockPanelResizeController {
                 side: panelSide(identity),
                 sideToggle: sideTogglePresentation(identity),
                 verticalSwap: verticalPresentation,
+                language: language(),
                 resizeFocused: resizeFocusedHandle == identity,
                 animated: animated,
                 completion: completion
@@ -929,20 +952,29 @@ final class DockPanelResizeController {
 
 @MainActor
 private final class DockPanelInteractionView: NSView {
+    private let identity: DockPanelIdentity
     private let backgroundGlass = NSGlassEffectView()
     private let actionsView = NSView()
+    private let languageSurface = NSGlassEffectView()
+    private let languagePickerSurface = NSGlassEffectView()
     private let sideSurface = NSGlassEffectView()
     private let verticalSurface = NSGlassEffectView()
+    private let languageButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let sideButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let verticalButton = NSButton(image: NSImage(), target: nil, action: nil)
+    private let languagePicker: DockPanelLanguagePickerView
     private let resizeView: DockPanelResizeRegionView
     private let onToggleSide: () -> Void
     private let onToggleVerticalOrder: () -> Void
     private var side: PanelSide = .left
     private var resizeFocused = false
+    private var isLanguagePickerVisible = false
     private var presentationGeneration = 0
 
-    var visibleButtonCount: Int { verticalButton.isHidden ? 1 : 2 }
+    var visibleButtonCount: Int {
+        if isLanguagePickerVisible { return 1 }
+        return 1 + (identity == .usageOverview ? 1 : 0) + (verticalButton.isHidden ? 0 : 1)
+    }
 
     init(
         identity: DockPanelIdentity,
@@ -952,10 +984,17 @@ private final class DockPanelInteractionView: NSView {
         onDragChanged: @escaping (CGFloat) -> Void,
         onDragEnded: @escaping (CGFloat) -> Void,
         onToggleSide: @escaping () -> Void,
-        onToggleVerticalOrder: @escaping () -> Void
+        onToggleVerticalOrder: @escaping () -> Void,
+        language: AppLanguage,
+        onSelectLanguage: @escaping (AppLanguage) -> Void
     ) {
+        self.identity = identity
         self.onToggleSide = onToggleSide
         self.onToggleVerticalOrder = onToggleVerticalOrder
+        languagePicker = DockPanelLanguagePickerView(
+            language: language,
+            onSelect: onSelectLanguage
+        )
         resizeView = DockPanelResizeRegionView(
             identity: identity,
             onEntered: onResizeEntered,
@@ -969,8 +1008,16 @@ private final class DockPanelInteractionView: NSView {
         backgroundGlass.style = .regular
         configureContinuousCorners(backgroundGlass, radius: DockPanelOverlayGeometry.outerCornerRadius)
         actionsView.wantsLayer = true
+        configure(languageSurface, button: languageButton, action: #selector(showLanguagePicker))
         configure(sideSurface, button: sideButton, action: #selector(toggleSide))
         configure(verticalSurface, button: verticalButton, action: #selector(toggleVerticalOrder))
+        languagePickerSurface.style = .regular
+        configureContinuousCorners(languagePickerSurface, radius: DockPanelOverlayGeometry.actionCornerRadius)
+        let pickerContent = NSView()
+        pickerContent.addSubview(languagePicker)
+        languagePickerSurface.contentView = pickerContent
+        actionsView.addSubview(languageSurface)
+        actionsView.addSubview(languagePickerSurface)
         actionsView.addSubview(sideSurface)
         actionsView.addSubview(verticalSurface)
         addSubview(backgroundGlass)
@@ -997,10 +1044,22 @@ private final class DockPanelInteractionView: NSView {
             side: side,
             actionCount: visibleButtonCount
         )
-        sideSurface.frame = frames[0]
+        if isLanguagePickerVisible {
+            languagePickerSurface.frame = frames[0]
+            languagePicker.frame = languagePickerSurface.bounds
+            return
+        }
+        var index = 0
+        if identity == .usageOverview {
+            languageSurface.frame = frames[index]
+            languageButton.frame = languageSurface.bounds
+            index += 1
+        }
+        sideSurface.frame = frames[index]
         sideButton.frame = sideSurface.bounds
-        if !verticalButton.isHidden, frames.count > 1 {
-            verticalSurface.frame = frames[1]
+        index += 1
+        if !verticalButton.isHidden, frames.count > index {
+            verticalSurface.frame = frames[index]
             verticalButton.frame = verticalSurface.bounds
         }
     }
@@ -1009,15 +1068,28 @@ private final class DockPanelInteractionView: NSView {
         side: PanelSide,
         sideToggle: PanelMovementPresentation,
         verticalSwap: PanelMovementPresentation?,
+        language: AppLanguage,
         resizeFocused: Bool,
         animated: Bool,
         completion: (@MainActor @Sendable () -> Void)?
     ) {
         self.side = side
+        languagePicker.update(language: language)
+        languageButton.image = NSImage(
+            systemSymbolName: "globe",
+            accessibilityDescription: language.changeLanguage
+        )
+        languageButton.toolTip = language.changeLanguage
+        languageButton.setAccessibilityLabel(language.changeLanguage)
+        languageSurface.isHidden = identity != .usageOverview || isLanguagePickerVisible
+        languagePickerSurface.isHidden = identity != .usageOverview || !isLanguagePickerVisible
+        sideSurface.isHidden = isLanguagePickerVisible
+        sideButton.isHidden = isLanguagePickerVisible
         apply(sideToggle, to: sideButton)
-        verticalButton.isHidden = verticalSwap == nil
-        verticalSurface.isHidden = verticalSwap == nil
+        verticalButton.isHidden = verticalSwap == nil || isLanguagePickerVisible
+        verticalSurface.isHidden = verticalSwap == nil || isLanguagePickerVisible
         if let verticalSwap { apply(verticalSwap, to: verticalButton) }
+        resizeView.update(language: language)
         needsLayout = true
         layoutSubtreeIfNeeded()
         self.resizeFocused = resizeFocused
@@ -1130,10 +1202,189 @@ private final class DockPanelInteractionView: NSView {
 
     @objc private func toggleSide() { onToggleSide() }
     @objc private func toggleVerticalOrder() { onToggleVerticalOrder() }
+
+    @objc private func showLanguagePicker() {
+        guard identity == .usageOverview else { return }
+        isLanguagePickerVisible = true
+        languageSurface.isHidden = true
+        sideSurface.isHidden = true
+        verticalSurface.isHidden = true
+        languagePickerSurface.isHidden = false
+        needsLayout = true
+    }
+
+    func dismissLanguagePicker() {
+        guard isLanguagePickerVisible else { return }
+        isLanguagePickerVisible = false
+        languagePickerSurface.isHidden = true
+        languageSurface.isHidden = identity != .usageOverview
+        sideSurface.isHidden = false
+        needsLayout = true
+    }
+}
+
+@MainActor
+private final class DockPanelLanguagePickerView: NSView {
+    private var language: AppLanguage
+    private let onSelect: (AppLanguage) -> Void
+    private var accumulatedScroll: CGFloat = 0
+    private var accumulatedDrag: CGFloat = 0
+    private var lastDragY: CGFloat?
+    private var didChangeSelectionWhileDragging = false
+
+    init(language: AppLanguage, onSelect: @escaping (AppLanguage) -> Void) {
+        self.language = language
+        self.onSelect = onSelect
+        super.init(frame: .zero)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.incrementor)
+        updateAccessibility()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var isFlipped: Bool { true }
+
+    func update(language: AppLanguage) {
+        guard self.language != language else {
+            updateAccessibility()
+            return
+        }
+        self.language = language
+        accumulatedScroll = 0
+        updateAccessibility()
+        needsDisplay = true
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let delta = event.scrollingDeltaY
+        guard delta != 0 else { return }
+        if event.hasPreciseScrollingDeltas {
+            accumulatedScroll += delta
+            guard abs(accumulatedScroll) >= 12 else { return }
+            select(offset: accumulatedScroll > 0 ? -1 : 1)
+            accumulatedScroll = 0
+        } else {
+            select(offset: delta > 0 ? -1 : 1)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        accumulatedDrag = 0
+        lastDragY = convert(event.locationInWindow, from: nil).y
+        didChangeSelectionWhileDragging = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        let y = convert(event.locationInWindow, from: nil).y
+        guard let lastDragY else {
+            self.lastDragY = y
+            return
+        }
+        accumulatedDrag += y - lastDragY
+        self.lastDragY = y
+
+        while abs(accumulatedDrag) >= DockPanelLanguagePickerGeometry.dragStep {
+            let offset = accumulatedDrag < 0 ? 1 : -1
+            select(offset: offset)
+            accumulatedDrag += accumulatedDrag < 0
+                ? DockPanelLanguagePickerGeometry.dragStep
+                : -DockPanelLanguagePickerGeometry.dragStep
+            didChangeSelectionWhileDragging = true
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer {
+            accumulatedDrag = 0
+            lastDragY = nil
+            didChangeSelectionWhileDragging = false
+        }
+        guard !didChangeSelectionWhileDragging else { return }
+        let y = convert(event.locationInWindow, from: nil).y
+        select(offset: DockPanelLanguagePickerGeometry.selectionOffset(forClickY: y, in: bounds))
+    }
+
+    override func accessibilityPerformIncrement() -> Bool {
+        select(offset: 1)
+        return true
+    }
+
+    override func accessibilityPerformDecrement() -> Bool {
+        select(offset: -1)
+        return true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let languages = AppLanguage.allCases
+        guard let selectedIndex = languages.firstIndex(of: language) else { return }
+        for offset in -1...1 {
+            let index = (selectedIndex + offset + languages.count) % languages.count
+            let row = DockPanelLanguagePickerGeometry.rowFrame(offset: offset, in: bounds)
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
+            paragraph.lineBreakMode = .byTruncatingTail
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.62)
+            shadow.shadowBlurRadius = 0.45
+            shadow.shadowOffset = .zero
+            (languages[index].displayName as NSString).draw(
+                in: row,
+                withAttributes: [
+                    .font: NSFont.systemFont(ofSize: offset == 0 ? 10 : 8, weight: offset == 0 ? .semibold : .regular),
+                    .foregroundColor: NSColor.white.withAlphaComponent(offset == 0 ? 1 : 0.46),
+                    .paragraphStyle: paragraph,
+                    .shadow: shadow,
+                ]
+            )
+        }
+    }
+
+    private func select(offset: Int) {
+        let languages = AppLanguage.allCases
+        guard let current = languages.firstIndex(of: language) else { return }
+        language = languages[(current + offset + languages.count) % languages.count]
+        updateAccessibility()
+        needsDisplay = true
+        onSelect(language)
+    }
+
+    private func updateAccessibility() {
+        setAccessibilityLabel(language.languagePickerLabel)
+        setAccessibilityValue(language.displayName)
+        toolTip = language.languagePickerLabel
+    }
+}
+
+struct DockPanelLanguagePickerGeometry {
+    static let topPadding: CGFloat = 4
+    static let itemHeight: CGFloat = 14
+    static let itemSpacing: CGFloat = 16
+    static let dragStep: CGFloat = 14
+
+    static func rowFrame(offset: Int, in bounds: CGRect) -> CGRect {
+        CGRect(
+            x: bounds.minX + 4,
+            y: bounds.midY + topPadding + CGFloat(offset) * itemSpacing - itemHeight / 2,
+            width: max(0, bounds.width - 8),
+            height: itemHeight
+        )
+    }
+
+    static func selectionOffset(forClickY y: CGFloat, in bounds: CGRect) -> Int {
+        let centerY = bounds.midY + topPadding
+        if y < centerY - itemSpacing / 2 { return -1 }
+        if y > centerY + itemSpacing / 2 { return 1 }
+        return 0
+    }
 }
 
 @MainActor
 private final class DockPanelResizeRegionView: NSView {
+    private let identity: DockPanelIdentity
     private let onEntered: () -> Void
     private let onExited: () -> Void
     private let onDragBegan: (CGFloat) -> Void
@@ -1151,6 +1402,7 @@ private final class DockPanelResizeRegionView: NSView {
         onDragChanged: @escaping (CGFloat) -> Void,
         onDragEnded: @escaping (CGFloat) -> Void
     ) {
+        self.identity = identity
         self.onEntered = onEntered
         self.onExited = onExited
         self.onDragBegan = onDragBegan
@@ -1162,21 +1414,10 @@ private final class DockPanelResizeRegionView: NSView {
         glassSurface.style = .regular
         configureContinuousCorners(glassSurface, radius: DockPanelOverlayGeometry.actionCornerRadius)
 
-        resizeImageView.image = NSImage(
-            systemSymbolName: "arrow.left.and.right",
-            accessibilityDescription: identity == .usageOverview
-                ? "调整用量概览面板宽度"
-                : "调整任务活动面板宽度"
-        )
         resizeImageView.imageScaling = .scaleProportionallyDown
         resizeImageView.setAccessibilityElement(true)
         resizeImageView.setAccessibilityRole(.splitter)
-        resizeImageView.setAccessibilityLabel(identity == .usageOverview
-            ? "调整用量概览面板宽度"
-            : "调整任务活动面板宽度")
-        resizeImageView.toolTip = identity == .usageOverview
-            ? "拖动以调整用量概览面板宽度"
-            : "拖动以调整任务活动面板宽度"
+        update(language: .simplifiedChineseMainland)
         let content = NSView()
         content.addSubview(resizeImageView)
         glassSurface.contentView = content
@@ -1191,6 +1432,16 @@ private final class DockPanelResizeRegionView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    func update(language: AppLanguage) {
+        let label = language.resizeLabel(identity, tooltip: false)
+        resizeImageView.image = NSImage(
+            systemSymbolName: "arrow.left.and.right",
+            accessibilityDescription: label
+        )
+        resizeImageView.setAccessibilityLabel(label)
+        resizeImageView.toolTip = language.resizeLabel(identity, tooltip: true)
+    }
 
     override func layout() {
         super.layout()
