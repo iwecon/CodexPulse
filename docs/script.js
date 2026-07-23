@@ -3,6 +3,14 @@ const translations = {
     skip: "跳到主要内容", brandHome: "Codex Pulse 首页", navigation: "主要导航",
     navFeatures: "功能", navPrivacy: "隐私", navStart: "开始使用",
     themeLabel: "主题", themeAuto: "自动", themeLight: "浅色", themeDark: "深色", languageLabel: "语言",
+    menuInstall: "安装", installMenuLabel: "安装 Codex Pulse", installAI: "使用 AI 安装",
+    installAIDetail: "复制安装提示词", copyAction: "复制", copySuccess: "已复制", copyFailure: "复制失败",
+    dmgArchitectures: "Apple 芯片与 Intel 版本", featuresMenuLabel: "Codex Pulse 功能",
+    menuUsageTitle: "用量概览", menuUsageDetail: "14 天 Token 趋势与 Codex 周额度",
+    menuTasksTitle: "任务活动", menuTasksDetail: "按项目与会话查看运行中及近期任务",
+    menuDockTitle: "贴近 Dock", menuDockDetail: "支持底部、左侧与右侧 Dock 布局",
+    menuHintTitle: "操作提醒", menuHintDetail: "鼠标指针移动至面板上静止 0.5s 可唤醒操作菜单",
+    menuPrivacyNote: "只读本机 Codex 数据 · 无需屏幕录制权限", themeMenuLabel: "选择主题",
     title: "Codex Pulse — 让 Codex 的每一次脉动，都留在桌面上",
     description: "Codex Pulse 是一款贴着 macOS Dock 展示 Codex Token 用量、周额度与任务状态的本地桌面配件。",
     heroTitle: "让 Codex 的每一次脉动，<br>都留在桌面上。",
@@ -37,6 +45,14 @@ const translations = {
     skip: "跳至主要內容", brandHome: "Codex Pulse 首頁", navigation: "主要導覽",
     navFeatures: "功能", navPrivacy: "私隱", navStart: "開始使用",
     themeLabel: "主題", themeAuto: "自動", themeLight: "淺色", themeDark: "深色", languageLabel: "語言",
+    menuInstall: "安裝", installMenuLabel: "安裝 Codex Pulse", installAI: "使用 AI 安裝",
+    installAIDetail: "複製安裝提示詞", copyAction: "複製", copySuccess: "已複製", copyFailure: "複製失敗",
+    dmgArchitectures: "Apple 晶片與 Intel 版本", featuresMenuLabel: "Codex Pulse 功能",
+    menuUsageTitle: "用量概覽", menuUsageDetail: "14 日 Token 趨勢與 Codex 每週限額",
+    menuTasksTitle: "任務活動", menuTasksDetail: "按專案與工作階段查看進行中及近期任務",
+    menuDockTitle: "貼近 Dock", menuDockDetail: "支援底部、左側與右側 Dock 佈局",
+    menuHintTitle: "操作提示", menuHintDetail: "將滑鼠指標移至面板上並靜止 0.5 秒，即可喚醒操作選單",
+    menuPrivacyNote: "唯讀本機 Codex 資料 · 毋須螢幕錄影權限", themeMenuLabel: "選擇主題",
     title: "Codex Pulse — 讓 Codex 的每一次脈動，都留在桌面上",
     description: "Codex Pulse 是一款貼近 macOS Dock，顯示 Codex Token 用量、每週限額與任務狀態的本機桌面工具。",
     heroTitle: "讓 Codex 的每一次脈動，<br>都留在桌面上。",
@@ -71,6 +87,14 @@ const translations = {
     skip: "跳到主要內容", brandHome: "Codex Pulse 首頁", navigation: "主要導覽",
     navFeatures: "功能", navPrivacy: "隱私", navStart: "開始使用",
     themeLabel: "主題", themeAuto: "自動", themeLight: "淺色", themeDark: "深色", languageLabel: "語言",
+    menuInstall: "安裝", installMenuLabel: "安裝 Codex Pulse", installAI: "使用 AI 安裝",
+    installAIDetail: "複製安裝提示詞", copyAction: "複製", copySuccess: "已複製", copyFailure: "複製失敗",
+    dmgArchitectures: "Apple 晶片與 Intel 版本", featuresMenuLabel: "Codex Pulse 功能",
+    menuUsageTitle: "用量概覽", menuUsageDetail: "14 天 Token 趨勢與 Codex 每週限額",
+    menuTasksTitle: "任務活動", menuTasksDetail: "依專案與工作階段查看執行中及近期任務",
+    menuDockTitle: "貼近 Dock", menuDockDetail: "支援底部、左側與右側 Dock 配置",
+    menuHintTitle: "操作提醒", menuHintDetail: "將滑鼠游標移至面板並靜止 0.5 秒，即可喚醒操作選單",
+    menuPrivacyNote: "唯讀本機 Codex 資料 · 不需螢幕錄影權限", themeMenuLabel: "選擇主題",
     title: "Codex Pulse — 讓 Codex 的每一次脈動，都留在桌面上",
     description: "Codex Pulse 是一款貼著 macOS Dock 顯示 Codex Token 用量、每週限額與任務狀態的本機桌面工具。",
     heroTitle: "讓 Codex 的每一次脈動，<br>都留在桌面上。",
@@ -105,6 +129,14 @@ const translations = {
     skip: "メインコンテンツへ移動", brandHome: "Codex Pulse ホーム", navigation: "メインナビゲーション",
     navFeatures: "機能", navPrivacy: "プライバシー", navStart: "はじめる",
     themeLabel: "テーマ", themeAuto: "自動", themeLight: "ライト", themeDark: "ダーク", languageLabel: "言語",
+    menuInstall: "インストール", installMenuLabel: "Codex Pulse をインストール", installAI: "AI でインストール",
+    installAIDetail: "インストール用プロンプトをコピー", copyAction: "コピー", copySuccess: "コピー済み", copyFailure: "コピー失敗",
+    dmgArchitectures: "Apple Silicon / Intel 版", featuresMenuLabel: "Codex Pulse の機能",
+    menuUsageTitle: "使用量概要", menuUsageDetail: "14日間の Token 推移と Codex 週間上限",
+    menuTasksTitle: "タスクアクティビティ", menuTasksDetail: "プロジェクトとセッション別に実行中・最近のタスクを表示",
+    menuDockTitle: "Dock に沿って配置", menuDockDetail: "Dock の下・左・右配置に対応",
+    menuHintTitle: "操作のヒント", menuHintDetail: "ポインタをパネル上で 0.5 秒静止すると操作メニューが表示されます",
+    menuPrivacyNote: "ローカル Codex データを読み取り専用で使用 · 画面収録権限不要", themeMenuLabel: "テーマを選択",
     title: "Codex Pulse — Codex の鼓動をデスクトップに",
     description: "Codex Pulse は macOS Dock の横に Codex の Token 使用量、週間上限、タスク状態を表示するローカルデスクトップアクセサリです。",
     heroTitle: "Codex の鼓動を、<br>デスクトップに。",
@@ -139,6 +171,14 @@ const translations = {
     skip: "주요 콘텐츠로 이동", brandHome: "Codex Pulse 홈", navigation: "주요 탐색",
     navFeatures: "기능", navPrivacy: "개인정보", navStart: "시작하기",
     themeLabel: "테마", themeAuto: "자동", themeLight: "라이트", themeDark: "다크", languageLabel: "언어",
+    menuInstall: "설치", installMenuLabel: "Codex Pulse 설치", installAI: "AI로 설치",
+    installAIDetail: "설치 프롬프트 복사", copyAction: "복사", copySuccess: "복사됨", copyFailure: "복사 실패",
+    dmgArchitectures: "Apple Silicon 및 Intel 버전", featuresMenuLabel: "Codex Pulse 기능",
+    menuUsageTitle: "사용량 개요", menuUsageDetail: "14일 Token 추이와 Codex 주간 한도",
+    menuTasksTitle: "작업 활동", menuTasksDetail: "프로젝트와 세션별로 진행 중 및 최근 작업 확인",
+    menuDockTitle: "Dock 옆에 배치", menuDockDetail: "Dock 하단·왼쪽·오른쪽 배치 지원",
+    menuHintTitle: "조작 안내", menuHintDetail: "포인터를 패널 위에서 0.5초 멈추면 조작 메뉴가 표시됩니다",
+    menuPrivacyNote: "로컬 Codex 데이터 읽기 전용 · 화면 기록 권한 불필요", themeMenuLabel: "테마 선택",
     title: "Codex Pulse — Codex의 모든 박동을 데스크톱에",
     description: "Codex Pulse는 macOS Dock 옆에 Codex Token 사용량, 주간 한도와 작업 상태를 표시하는 로컬 데스크톱 도구입니다.",
     heroTitle: "Codex의 모든 박동을, <br>데스크톱에.",
@@ -173,6 +213,14 @@ const translations = {
     skip: "Skip to main content", brandHome: "Codex Pulse home", navigation: "Main navigation",
     navFeatures: "Features", navPrivacy: "Privacy", navStart: "Get started",
     themeLabel: "Theme", themeAuto: "Auto", themeLight: "Light", themeDark: "Dark", languageLabel: "Language",
+    menuInstall: "Install", installMenuLabel: "Install Codex Pulse", installAI: "Install with AI",
+    installAIDetail: "Copy the installation prompt", copyAction: "Copy", copySuccess: "Copied", copyFailure: "Copy failed",
+    dmgArchitectures: "Apple silicon and Intel builds", featuresMenuLabel: "Codex Pulse features",
+    menuUsageTitle: "Usage overview", menuUsageDetail: "14-day token trend and Codex weekly limit",
+    menuTasksTitle: "Task activity", menuTasksDetail: "See running and recent tasks by project and session",
+    menuDockTitle: "Beside the Dock", menuDockDetail: "Supports bottom, left, and right Dock layouts",
+    menuHintTitle: "Interaction tip", menuHintDetail: "Rest the pointer over a panel for 0.5 seconds to reveal its controls",
+    menuPrivacyNote: "Reads local Codex data only · No Screen Recording permission", themeMenuLabel: "Choose a theme",
     title: "Codex Pulse — Keep every Codex pulse on your desktop",
     description: "Codex Pulse is a local macOS desktop accessory that shows Codex token usage, weekly limits, and task activity beside the Dock.",
     heroTitle: "Keep every Codex pulse <br>on your desktop.",
@@ -263,10 +311,17 @@ const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   const resolvedTheme = theme === "auto" ? (systemTheme.matches ? "dark" : "light") : theme;
+  document.documentElement.dataset.resolvedTheme = resolvedTheme;
+  for (const icon of document.querySelectorAll("[data-dock-codex-icon]")) {
+    icon.src = `./assets/codex-icon-${resolvedTheme}.png`;
+  }
   document.querySelector('meta[name="theme-color"]')?.setAttribute(
     "content",
     resolvedTheme === "dark" ? "#070b12" : "#f4f7fb"
   );
+  for (const button of document.querySelectorAll("[data-desktop-theme]")) {
+    button.setAttribute("aria-checked", String(button.dataset.desktopTheme === theme));
+  }
 }
 
 applyTheme(initialTheme);
@@ -305,4 +360,557 @@ if ("IntersectionObserver" in window) {
   for (const item of revealItems) observer.observe(item);
 } else {
   for (const item of revealItems) item.classList.add("is-visible");
+}
+
+const desktopExperience = document.querySelector("#desktop-experience");
+
+if (desktopExperience) {
+  const desktop = document.querySelector("#mac-desktop");
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const menuTriggers = [...document.querySelectorAll(".mac-menu-trigger")];
+  const menuPopovers = [...document.querySelectorAll(".mac-popover")];
+
+  function closeDesktopMenus({ restoreFocus = false } = {}) {
+    const activeTrigger = menuTriggers.find((trigger) => trigger.getAttribute("aria-expanded") === "true");
+    for (const trigger of menuTriggers) trigger.setAttribute("aria-expanded", "false");
+    for (const popover of menuPopovers) popover.classList.remove("is-open");
+    if (restoreFocus) activeTrigger?.focus();
+  }
+
+  function openDesktopMenu(trigger) {
+    const popover = document.querySelector(`#${trigger.dataset.menu}`);
+    const alreadyOpen = trigger.getAttribute("aria-expanded") === "true";
+    closeDesktopMenus();
+    if (alreadyOpen || !popover) return;
+    trigger.setAttribute("aria-expanded", "true");
+    popover.style.left = `${trigger.offsetLeft}px`;
+    popover.classList.add("is-open");
+  }
+
+  for (const trigger of menuTriggers) {
+    trigger.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openDesktopMenu(trigger);
+    });
+    trigger.addEventListener("keydown", (event) => {
+      if (!["ArrowDown", "Enter", " "].includes(event.key)) return;
+      event.preventDefault();
+      openDesktopMenu(trigger);
+      document.querySelector(`#${trigger.dataset.menu} [role^="menuitem"]`)?.focus();
+    });
+  }
+
+  desktopExperience.addEventListener("pointerdown", (event) => {
+    if (!event.target.closest(".mac-popover, .mac-menu-trigger")) closeDesktopMenus();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeDesktopMenus({ restoreFocus: true });
+  });
+
+  for (const button of document.querySelectorAll("[data-desktop-theme]")) {
+    button.addEventListener("click", () => {
+      const theme = button.dataset.desktopTheme;
+      applyTheme(theme);
+      writePreference("codex-pulse-theme", theme);
+      if (themeSelect) themeSelect.value = theme;
+      closeDesktopMenus({ restoreFocus: true });
+    });
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.append(field);
+    field.select();
+    document.execCommand("copy");
+    field.remove();
+    return Promise.resolve();
+  }
+
+  for (const button of document.querySelectorAll(".copy-command")) {
+    button.addEventListener("click", async () => {
+      const status = button.querySelector(".copy-status");
+      try {
+        await copyText(button.dataset.copy);
+        if (status) status.textContent = (translations[currentLocale] || translations.en).copySuccess;
+      } catch {
+        if (status) status.textContent = (translations[currentLocale] || translations.en).copyFailure;
+      }
+      window.setTimeout(() => {
+        if (status) status.textContent = (translations[currentLocale] || translations.en).copyAction;
+      }, 1600);
+    });
+  }
+
+  function raiseWindow(windowElement) {
+    if (!windowElement) return;
+    for (const item of document.querySelectorAll(".mac-window")) {
+      item.classList.remove("is-front");
+      item.style.zIndex = "20";
+    }
+    windowElement.style.zIndex = "30";
+    windowElement.classList.add("is-front");
+  }
+
+  for (const windowElement of document.querySelectorAll(".mac-window")) {
+    windowElement.addEventListener("pointerdown", () => raiseWindow(windowElement));
+    const handle = windowElement.querySelector("[data-drag-handle]");
+    handle?.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      raiseWindow(windowElement);
+      const desktopRect = desktop.getBoundingClientRect();
+      const windowRect = windowElement.getBoundingClientRect();
+      const offsetX = event.clientX - windowRect.left;
+      const offsetY = event.clientY - windowRect.top;
+      windowElement.style.right = "auto";
+      windowElement.classList.add("is-dragging");
+      handle.setPointerCapture(event.pointerId);
+
+      const moveWindow = (moveEvent) => {
+        const maxX = Math.max(0, desktop.clientWidth - windowElement.offsetWidth);
+        const maxY = Math.max(0, desktop.clientHeight - windowElement.offsetHeight);
+        const left = Math.min(maxX, Math.max(0, moveEvent.clientX - desktopRect.left - offsetX));
+        const top = Math.min(maxY, Math.max(0, moveEvent.clientY - desktopRect.top - offsetY));
+        windowElement.style.left = `${left}px`;
+        windowElement.style.top = `${top}px`;
+      };
+
+      const finishDrag = () => {
+        windowElement.classList.remove("is-dragging");
+        handle.removeEventListener("pointermove", moveWindow);
+        handle.removeEventListener("pointerup", finishDrag);
+        handle.removeEventListener("pointercancel", finishDrag);
+        handle.removeEventListener("lostpointercapture", finishDrag);
+        window.removeEventListener("mouseup", finishDrag);
+        window.removeEventListener("blur", finishDrag);
+      };
+
+      handle.addEventListener("pointermove", moveWindow);
+      handle.addEventListener("pointerup", finishDrag);
+      handle.addEventListener("pointercancel", finishDrag);
+      handle.addEventListener("lostpointercapture", finishDrag);
+      window.addEventListener("mouseup", finishDrag);
+      window.addEventListener("blur", finishDrag);
+    });
+  }
+
+  document.querySelectorAll("[data-raise-codex]").forEach((button) => {
+    button.addEventListener("click", () => raiseWindow(document.querySelector('[data-window="codex"]')));
+  });
+  document.querySelectorAll("[data-raise-activity]").forEach((button) => {
+    button.addEventListener("click", () => raiseWindow(document.querySelector('[data-window="activity"]')));
+  });
+
+  const panelCopy = {
+    "zh-CN": {
+      "usage-title": "近 14 天",
+      "usage-start": "7月10日",
+      "usage-end": "7月23日 · 1.42M",
+      "quota-title": "周限额",
+      "quota-used": "已用 32%",
+      "quota-remaining": "剩余 68%",
+      "quota-reset-at": "7月27日 08:00 重置",
+      "quota-daily": "日均可用 17%",
+      "quota-reset": "3 天 14 小时后重置"
+    },
+    "zh-HK": {
+      "usage-title": "近 14 日",
+      "usage-start": "7月10日",
+      "usage-end": "7月23日 · 1.42M",
+      "quota-title": "每週限額",
+      "quota-used": "已用 32%",
+      "quota-remaining": "剩餘 68%",
+      "quota-reset-at": "7月27日 08:00 重設",
+      "quota-daily": "每日可用 17%",
+      "quota-reset": "3 日 14 小時後重設"
+    },
+    "zh-TW": {
+      "usage-title": "近 14 天",
+      "usage-start": "7月10日",
+      "usage-end": "7月23日 · 1.42M",
+      "quota-title": "每週限額",
+      "quota-used": "已用 32%",
+      "quota-remaining": "剩餘 68%",
+      "quota-reset-at": "7月27日 08:00 重設",
+      "quota-daily": "每日可用 17%",
+      "quota-reset": "3 天 14 小時後重設"
+    },
+    en: {
+      "usage-title": "Last 14 days",
+      "usage-start": "Jul 10",
+      "usage-end": "Jul 23 · 1.42M",
+      "quota-title": "Weekly limit",
+      "quota-used": "32% used",
+      "quota-remaining": "68% left",
+      "quota-reset-at": "Resets Jul 27, 08:00",
+      "quota-daily": "17% daily",
+      "quota-reset": "Resets in 3d 14h"
+    },
+    ja: {
+      "usage-title": "過去14日",
+      "usage-start": "7月10日",
+      "usage-end": "7月23日 · 1.42M",
+      "quota-title": "週間上限",
+      "quota-used": "使用済み 32%",
+      "quota-remaining": "残り 68%",
+      "quota-reset-at": "7月27日 08:00 リセット",
+      "quota-daily": "1日平均 17%",
+      "quota-reset": "3日14時間後にリセット"
+    },
+    ko: {
+      "usage-title": "최근 14일",
+      "usage-start": "7월 10일",
+      "usage-end": "7월 23일 · 1.42M",
+      "quota-title": "주간 한도",
+      "quota-used": "32% 사용",
+      "quota-remaining": "68% 남음",
+      "quota-reset-at": "7월 27일 08:00 초기화",
+      "quota-daily": "일일 17%",
+      "quota-reset": "3일 14시간 후 초기화"
+    }
+  };
+  const panelLanguages = [
+    { value: "zh-CN", short: "简", label: "简体中文" },
+    { value: "zh-HK", short: "港", label: "繁體中文（香港）" },
+    { value: "zh-TW", short: "繁", label: "繁體中文（台灣）" },
+    { value: "ja", short: "日", label: "日本語" },
+    { value: "ko", short: "한", label: "한국어" },
+    { value: "en", short: "EN", label: "English" }
+  ];
+  const panelLocations = ["bottom-left", "bottom-right"];
+  const panels = [...document.querySelectorAll(".desktop-dock-panel")];
+  const storedPanelLayout = (() => {
+    try {
+      return JSON.parse(readPreference("codex-pulse-desktop-panels-v4") || "{}");
+    } catch {
+      return {};
+    }
+  })();
+
+  function savePanelLayout() {
+    const layout = {};
+    for (const panel of panels) {
+      layout[panel.dataset.panel] = {
+        location: panel.dataset.location,
+        width: panel.offsetWidth,
+        align: panel.dataset.align,
+        language: panel.dataset.language,
+        stackOrder: panel.dataset.stackOrder
+      };
+    }
+    writePreference("codex-pulse-desktop-panels-v4", JSON.stringify(layout));
+  }
+
+  function syncPanelPresentation() {
+    const taskPanel = document.querySelector('[data-panel="task"]');
+    if (taskPanel) {
+      const resolvedAlignment = taskPanel.dataset.align === "auto"
+        ? (taskPanel.dataset.location === "bottom-right" ? "right" : "left")
+        : taskPanel.dataset.align;
+      taskPanel.dataset.resolvedAlign = resolvedAlignment;
+      const alignmentTargets = {
+        auto: "左对齐",
+        left: "右对齐",
+        right: "自动对齐"
+      };
+      const alignmentButton = taskPanel.querySelector('[data-panel-action="align"]');
+      const alignmentLabel = `切换任务文字为${alignmentTargets[taskPanel.dataset.align]}`;
+      alignmentButton?.setAttribute("aria-label", alignmentLabel);
+      alignmentButton?.setAttribute("title", alignmentLabel);
+    }
+    for (const panel of panels) {
+      const target = panel.dataset.location === "bottom-left" ? "右侧" : "左侧";
+      const moveButton = panel.querySelector('[data-panel-action="move"]');
+      const moveLabel = `移动${panel.dataset.panel === "usage" ? "用量概览" : "任务活动"}面板到${target}`;
+      moveButton?.setAttribute("aria-label", moveLabel);
+      moveButton?.setAttribute("title", moveLabel);
+    }
+  }
+
+  function syncPanelStack() {
+    const usagePanel = document.querySelector('[data-panel="usage"]');
+    const taskPanel = document.querySelector('[data-panel="task"]');
+    const preferredUsageOrder = usagePanel?.dataset.stackOrder === "second" ? "second" : "first";
+    for (const panel of panels) {
+      delete panel.dataset.stackOrder;
+      const orderButton = panel.querySelector('[data-panel-action="order"]');
+      if (orderButton) orderButton.disabled = true;
+    }
+    if (!usagePanel || !taskPanel) {
+      syncPanelPresentation();
+      return;
+    }
+    const colocated = usagePanel.dataset.location === taskPanel.dataset.location;
+    if (colocated) {
+      usagePanel.dataset.stackOrder = preferredUsageOrder;
+      taskPanel.dataset.stackOrder = preferredUsageOrder === "first" ? "second" : "first";
+      usagePanel.querySelector('[data-panel-action="order"]').disabled = false;
+      taskPanel.querySelector('[data-panel-action="order"]').disabled = false;
+    }
+    syncPanelPresentation();
+  }
+
+  function applyPanelLanguage(panel, languageValue) {
+    const language = panelLanguages.find((item) => item.value === languageValue) || panelLanguages[0];
+    const copy = panelCopy[language.value] || panelCopy["zh-CN"];
+    panel.dataset.language = language.value;
+    for (const element of panel.querySelectorAll("[data-panel-copy]")) {
+      element.textContent = copy[element.dataset.panelCopy];
+    }
+    const picker = panel.querySelector("[data-panel-language-picker]");
+    if (picker) {
+      picker.textContent = language.short;
+      picker.setAttribute("aria-valuetext", language.label);
+    }
+  }
+
+  for (const panel of panels) {
+    const saved = storedPanelLayout[panel.dataset.panel];
+    if (panelLocations.includes(saved?.location)) panel.dataset.location = saved.location;
+    if (Number.isFinite(saved?.width)) {
+      const restoredWidth = Math.min(530, Math.max(180, saved.width));
+      panel.style.setProperty("--panel-width", `${restoredWidth}px`);
+      panel.querySelector("[data-panel-resize]")?.setAttribute("aria-valuenow", String(Math.round(restoredWidth)));
+    }
+    if (panel.dataset.panel === "task" && ["auto", "left", "right"].includes(saved?.align)) {
+      panel.dataset.align = saved.align;
+    }
+    if (["first", "second"].includes(saved?.stackOrder)) panel.dataset.stackOrder = saved.stackOrder;
+    if (panel.dataset.panel === "usage") {
+      applyPanelLanguage(panel, panelCopy[saved?.language] ? saved.language : "zh-CN");
+    }
+
+    let dwellTimer;
+    let hideTimer;
+    let dwellPoint;
+    const dismissPanelControls = () => {
+      panel.classList.remove("controls-visible", "language-picker-visible", "resize-focused");
+      panel.querySelector('[data-panel-action="language"]')?.setAttribute("aria-expanded", "false");
+      const picker = panel.querySelector("[data-panel-language-picker]");
+      if (picker) picker.hidden = true;
+    };
+    const beginDwell = (event) => {
+      if (event.pointerType === "touch") return;
+      window.clearTimeout(dwellTimer);
+      window.clearTimeout(hideTimer);
+      dwellPoint = { x: event.clientX, y: event.clientY };
+      dwellTimer = window.setTimeout(() => panel.classList.add("controls-visible"), 500);
+    };
+    panel.addEventListener("pointerenter", (event) => {
+      window.clearTimeout(hideTimer);
+      if (!panel.classList.contains("controls-visible")) beginDwell(event);
+    });
+    panel.addEventListener("pointermove", (event) => {
+      if (!dwellPoint || panel.classList.contains("controls-visible")) return;
+      if (Math.hypot(event.clientX - dwellPoint.x, event.clientY - dwellPoint.y) > 3) beginDwell(event);
+    });
+    panel.addEventListener("pointerleave", () => {
+      window.clearTimeout(dwellTimer);
+      dwellPoint = null;
+      hideTimer = window.setTimeout(() => {
+        if (!panel.matches(":hover, :focus-within")) dismissPanelControls();
+      }, 1000);
+    });
+    panel.addEventListener("focusin", () => window.clearTimeout(hideTimer));
+    panel.addEventListener("focusout", () => {
+      hideTimer = window.setTimeout(() => {
+        if (!panel.matches(":hover, :focus-within")) dismissPanelControls();
+      }, 1000);
+    });
+  }
+
+  syncPanelStack();
+
+  function cyclePanelLanguage(panel, offset) {
+    const currentIndex = panelLanguages.findIndex((item) => item.value === panel.dataset.language);
+    const nextIndex = (Math.max(0, currentIndex) + offset + panelLanguages.length) % panelLanguages.length;
+    applyPanelLanguage(panel, panelLanguages[nextIndex].value);
+    savePanelLayout();
+  }
+
+  document.querySelectorAll("[data-panel-language-picker]").forEach((picker) => {
+    const panel = picker.closest("[data-panel]");
+    let lastDragY;
+    let accumulatedDrag = 0;
+    let didDrag = false;
+    picker.addEventListener("click", () => {
+      if (didDrag) {
+        didDrag = false;
+        return;
+      }
+      cyclePanelLanguage(panel, 1);
+    });
+    picker.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      cyclePanelLanguage(panel, event.deltaY > 0 ? 1 : -1);
+    }, { passive: false });
+    picker.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      lastDragY = event.clientY;
+      accumulatedDrag = 0;
+      didDrag = false;
+      picker.setPointerCapture(event.pointerId);
+    });
+    picker.addEventListener("pointermove", (event) => {
+      if (lastDragY === undefined) return;
+      accumulatedDrag += event.clientY - lastDragY;
+      lastDragY = event.clientY;
+      if (Math.abs(accumulatedDrag) < 12) return;
+      cyclePanelLanguage(panel, accumulatedDrag > 0 ? 1 : -1);
+      accumulatedDrag = 0;
+      didDrag = true;
+    });
+    const finishLanguageDrag = () => {
+      lastDragY = undefined;
+      savePanelLayout();
+    };
+    picker.addEventListener("pointerup", finishLanguageDrag);
+    picker.addEventListener("pointercancel", finishLanguageDrag);
+    picker.addEventListener("lostpointercapture", finishLanguageDrag);
+  });
+
+  document.querySelectorAll("[data-panel-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const panel = button.closest("[data-panel]");
+      if (button.dataset.panelAction === "language") {
+        const isVisible = panel.classList.toggle("language-picker-visible");
+        button.setAttribute("aria-expanded", String(isVisible));
+        const picker = panel.querySelector("[data-panel-language-picker]");
+        if (picker) {
+          picker.hidden = !isVisible;
+          if (isVisible) picker.focus();
+        }
+      } else if (button.dataset.panelAction === "move") {
+        const currentIndex = panelLocations.indexOf(panel.dataset.location);
+        panel.dataset.location = panelLocations[(currentIndex + 1) % panelLocations.length];
+        syncPanelStack();
+      } else if (button.dataset.panelAction === "align") {
+        panel.dataset.align = {
+          auto: "left",
+          left: "right",
+          right: "auto"
+        }[panel.dataset.align] || "auto";
+        syncPanelPresentation();
+      } else if (button.dataset.panelAction === "order" && !button.disabled) {
+        const otherPanel = panels.find((item) => item !== panel && item.dataset.location === panel.dataset.location);
+        if (otherPanel) {
+          const currentOrder = panel.dataset.stackOrder;
+          panel.dataset.stackOrder = otherPanel.dataset.stackOrder;
+          otherPanel.dataset.stackOrder = currentOrder;
+        }
+      }
+      savePanelLayout();
+    });
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    for (const panel of panels) {
+      panel.classList.remove("language-picker-visible");
+      panel.querySelector('[data-panel-action="language"]')?.setAttribute("aria-expanded", "false");
+      const picker = panel.querySelector("[data-panel-language-picker]");
+      if (picker) picker.hidden = true;
+    }
+  });
+
+  function resizePanel(panel, delta) {
+    const location = panel.dataset.location;
+    const handleOnLeft = location === "bottom-right";
+    const direction = handleOnLeft ? -1 : 1;
+    const nextWidth = Math.min(530, Math.max(180, panel.offsetWidth + delta * direction));
+    panel.style.setProperty("--panel-width", `${nextWidth}px`);
+    panel.querySelector("[data-panel-resize]")?.setAttribute("aria-valuenow", String(Math.round(nextWidth)));
+  }
+
+  for (const handle of document.querySelectorAll("[data-panel-resize]")) {
+    const panel = handle.closest("[data-panel]");
+    let isResizing = false;
+    handle.addEventListener("pointerenter", () => panel.classList.add("resize-focused"));
+    handle.addEventListener("pointerleave", () => {
+      if (!isResizing) panel.classList.remove("resize-focused");
+    });
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      isResizing = true;
+      panel.classList.add("controls-visible", "resize-focused");
+      let previousX = event.clientX;
+      handle.setPointerCapture(event.pointerId);
+      const move = (moveEvent) => {
+        resizePanel(panel, moveEvent.clientX - previousX);
+        previousX = moveEvent.clientX;
+      };
+      const finish = () => {
+        isResizing = false;
+        panel.classList.remove("resize-focused");
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", finish);
+        handle.removeEventListener("pointercancel", finish);
+        handle.removeEventListener("lostpointercapture", finish);
+        window.removeEventListener("mouseup", finish);
+        window.removeEventListener("blur", finish);
+        savePanelLayout();
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", finish);
+      handle.addEventListener("pointercancel", finish);
+      handle.addEventListener("lostpointercapture", finish);
+      window.addEventListener("mouseup", finish);
+      window.addEventListener("blur", finish);
+    });
+    handle.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+      event.preventDefault();
+      resizePanel(panel, event.key === "ArrowRight" ? 10 : -10);
+      savePanelLayout();
+    });
+  }
+
+  const cpuCell = document.querySelector("#pulse-cpu");
+  const memoryCell = document.querySelector("#pulse-memory");
+  let metricTimer;
+
+  function scheduleMetricUpdate() {
+    window.clearTimeout(metricTimer);
+    if (document.hidden) return;
+    metricTimer = window.setTimeout(() => {
+      if (cpuCell) cpuCell.textContent = `${(0.6 + Math.random() * 15.4).toFixed(1)}%`;
+      if (memoryCell) memoryCell.textContent = `${(50 + Math.random() * 10).toFixed(1)} MB`;
+      scheduleMetricUpdate();
+    }, 3000 + Math.random() * 2000);
+  }
+
+  document.addEventListener("visibilitychange", scheduleMetricUpdate);
+  scheduleMetricUpdate();
+
+  window.addEventListener("resize", () => {
+    for (const windowElement of document.querySelectorAll(".mac-window")) {
+      if (!windowElement.style.left || !windowElement.style.top) continue;
+      const maxX = Math.max(0, desktop.clientWidth - windowElement.offsetWidth);
+      const maxY = Math.max(0, desktop.clientHeight - windowElement.offsetHeight);
+      windowElement.style.left = `${Math.min(maxX, Math.max(0, Number.parseFloat(windowElement.style.left)))}px`;
+      windowElement.style.top = `${Math.min(maxY, Math.max(0, Number.parseFloat(windowElement.style.top)))}px`;
+    }
+  });
+
+  const desktopClock = document.querySelector("#desktop-clock");
+  const clockFormatter = new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+  const updateClock = () => {
+    if (desktopClock) desktopClock.textContent = clockFormatter.format(new Date());
+  };
+  updateClock();
+  window.setInterval(updateClock, 60000);
 }

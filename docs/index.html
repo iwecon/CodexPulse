@@ -9,6 +9,241 @@
   <link rel="stylesheet" href="./styles.css?v=20260723">
 </head>
 <body>
+  <div class="desktop-experience" id="desktop-experience" aria-label="Codex Pulse macOS 桌面体验">
+    <header class="mac-menu-bar" aria-label="macOS 菜单栏">
+      <div class="mac-menu-left">
+        <span class="mac-apple" aria-hidden="true"></span>
+        <strong>Codex Pulse</strong>
+        <button class="mac-menu-trigger" type="button" data-menu="install-menu" aria-haspopup="menu" aria-expanded="false" data-i18n="menuInstall">安装</button>
+        <button class="mac-menu-trigger" type="button" data-menu="features-menu" aria-haspopup="menu" aria-expanded="false" data-i18n="navFeatures">功能</button>
+        <button class="mac-menu-trigger" type="button" data-menu="theme-menu" aria-haspopup="menu" aria-expanded="false" data-i18n="themeLabel">主题</button>
+      </div>
+      <div class="mac-menu-status" aria-hidden="true">
+        <span class="status-wifi">◒</span>
+        <span>⌕</span>
+        <span class="status-toggle">◉</span>
+        <time id="desktop-clock">7月23日 周四 09:41</time>
+      </div>
+
+      <div class="mac-popover install-popover" id="install-menu" role="menu" aria-label="安装 Codex Pulse" data-i18n-aria="installMenuLabel">
+        <button class="copy-command" type="button" role="menuitem" data-copy="From https://iwecon.github.io/CodexPulse/ to Install CodexPulse. Try Homebrew first, then npm, and finally download and install via the GitHub Release Page.">
+          <span><strong data-i18n="installAI">使用 AI 安装</strong><small data-i18n="installAIDetail">复制安装提示词</small></span>
+          <span class="copy-status" data-i18n="copyAction">复制</span>
+        </button>
+        <div class="mac-menu-separator"></div>
+        <a role="menuitem" href="https://github.com/iwecon/CodexPulse/releases/latest">
+          <span><strong data-i18n="installDmg">下载 DMG</strong><small data-i18n="dmgArchitectures">Apple 芯片与 Intel 版本</small></span>
+          <span aria-hidden="true">↗</span>
+        </a>
+        <div class="mac-menu-separator"></div>
+        <button class="copy-command" type="button" role="menuitem" data-copy="brew tap iwecon/codex-pulse https://github.com/iwecon/CodexPulse&#10;brew install --cask iwecon/codex-pulse/codex-pulse">
+          <span><strong>Homebrew</strong><small>brew install --cask …</small></span>
+          <span class="copy-status" data-i18n="copyAction">复制</span>
+        </button>
+        <button class="copy-command" type="button" role="menuitem" data-copy="npm install -g github:iwecon/CodexPulse&#10;codex-pulse install">
+          <span><strong>npm</strong><small>npm install -g …</small></span>
+          <span class="copy-status" data-i18n="copyAction">复制</span>
+        </button>
+        <div class="mac-menu-separator"></div>
+        <a role="menuitem" href="https://github.com/iwecon/CodexPulse"><span data-i18n="viewGithub">在 GitHub 查看</span><span aria-hidden="true">↗</span></a>
+      </div>
+
+      <div class="mac-popover features-popover" id="features-menu" role="menu" aria-label="Codex Pulse 功能" data-i18n-aria="featuresMenuLabel">
+        <div class="feature-menu-item"><span aria-hidden="true">◫</span><p><strong data-i18n="menuUsageTitle">用量概览</strong><small data-i18n="menuUsageDetail">14 天 Token 趋势与 Codex 周额度</small></p></div>
+        <div class="feature-menu-item"><span aria-hidden="true">✓</span><p><strong data-i18n="menuTasksTitle">任务活动</strong><small data-i18n="menuTasksDetail">按项目与会话查看运行中及近期任务</small></p></div>
+        <div class="feature-menu-item"><span aria-hidden="true">⌘</span><p><strong data-i18n="menuDockTitle">贴近 Dock</strong><small data-i18n="menuDockDetail">支持底部、左侧与右侧 Dock 布局</small></p></div>
+        <div class="feature-menu-item"><span aria-hidden="true">↖</span><p><strong data-i18n="menuHintTitle">操作提醒</strong><small data-i18n="menuHintDetail">鼠标指针移动至面板上静止 0.5s 可唤醒操作菜单</small></p></div>
+        <div class="mac-menu-separator"></div>
+        <div class="feature-menu-note" data-i18n="menuPrivacyNote">只读本机 Codex 数据 · 无需屏幕录制权限</div>
+      </div>
+
+      <div class="mac-popover theme-popover" id="theme-menu" role="menu" aria-label="选择主题" data-i18n-aria="themeMenuLabel">
+        <button type="button" role="menuitemradio" data-desktop-theme="auto" aria-checked="true"><span class="theme-check">✓</span><span data-i18n="themeAuto">Auto</span></button>
+        <button type="button" role="menuitemradio" data-desktop-theme="light" aria-checked="false"><span class="theme-check">✓</span><span data-i18n="themeLight">Light</span></button>
+        <button type="button" role="menuitemradio" data-desktop-theme="dark" aria-checked="false"><span class="theme-check">✓</span><span data-i18n="themeDark">Dark</span></button>
+      </div>
+    </header>
+
+    <main class="mac-desktop" id="mac-desktop">
+      <section class="mac-window codex-desktop-window" data-window="codex" aria-label="Codex 窗口">
+        <div class="mac-window-titlebar" data-drag-handle>
+          <span class="mac-traffic-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+          <strong>Codex</strong>
+          <span class="window-title-spacer"></span>
+        </div>
+        <div class="codex-loading-shell" aria-label="Codex 正在载入" aria-live="polite">
+          <aside class="codex-loading-sidebar">
+            <div class="skeleton skeleton-logo"></div>
+            <div class="skeleton skeleton-side-long"></div>
+            <div class="skeleton skeleton-side-short"></div>
+            <div class="skeleton skeleton-side-long"></div>
+            <div class="skeleton skeleton-side-mid"></div>
+          </aside>
+          <div class="codex-loading-content">
+            <div class="skeleton skeleton-heading"></div>
+            <div class="skeleton-thread">
+              <span class="skeleton skeleton-avatar"></span>
+              <div><i class="skeleton"></i><i class="skeleton"></i></div>
+              <b class="skeleton"></b>
+            </div>
+            <div class="skeleton-thread">
+              <span class="skeleton skeleton-avatar"></span>
+              <div><i class="skeleton"></i><i class="skeleton"></i></div>
+              <b class="skeleton"></b>
+            </div>
+            <div class="skeleton-thread">
+              <span class="skeleton skeleton-avatar"></span>
+              <div><i class="skeleton"></i><i class="skeleton"></i></div>
+              <b class="skeleton"></b>
+            </div>
+            <div class="skeleton-composer"><i class="skeleton"></i><b class="skeleton"></b></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mac-window activity-window" data-window="activity" aria-label="活动监视器窗口">
+        <div class="mac-window-titlebar" data-drag-handle>
+          <span class="mac-traffic-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+          <strong>活动监视器</strong>
+          <span class="window-title-spacer"></span>
+        </div>
+        <div class="activity-toolbar">
+          <button type="button" aria-label="停止进程" disabled>
+            <svg class="sf-symbol" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M9.5 9.5l5 5m0-5l-5 5"></path></svg>
+          </button>
+          <button type="button" aria-label="进程信息" disabled>
+            <svg class="sf-symbol" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 10.8v5.5"></path><circle class="sf-symbol-dot" cx="12" cy="7.8" r="1"></circle></svg>
+          </button>
+          <span></span><div class="activity-search">搜索</div>
+        </div>
+        <table class="activity-table">
+          <thead><tr><th>进程名称</th><th>% CPU</th><th>内存</th></tr></thead>
+          <tbody>
+            <tr class="activity-selected"><td><span class="process-icon pulse-icon">⌁</span>Codex Pulse</td><td id="pulse-cpu">8.4%</td><td id="pulse-memory">54.8 MB</td></tr>
+            <tr><td><span class="process-icon">▣</span>WindowServer</td><td>5.1%</td><td>512.3 MB</td></tr>
+            <tr><td><span class="process-icon">◈</span>Code</td><td>3.2%</td><td>426.1 MB</td></tr>
+            <tr><td><span class="process-icon">◎</span>Safari</td><td>2.7%</td><td>381.4 MB</td></tr>
+            <tr><td><span class="process-icon">◉</span>Finder</td><td>0.8%</td><td>127.8 MB</td></tr>
+            <tr><td><span class="process-icon">⌘</span>Codex Helper (Renderer)</td><td>0.7%</td><td>98.1 MB</td></tr>
+            <tr><td><span class="process-icon">›_</span>Terminal</td><td>0.6%</td><td>86.4 MB</td></tr>
+            <tr><td><span class="process-icon">◫</span>控制中心</td><td>0.5%</td><td>74.2 MB</td></tr>
+            <tr><td><span class="process-icon">◌</span>mds</td><td>0.1%</td><td>43.9 MB</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="desktop-dock-panel desktop-usage-panel" data-panel="usage" data-location="bottom-left" aria-label="用量概览面板">
+        <div class="panel-hover-controls" aria-label="用量概览面板控制">
+          <button type="button" data-panel-action="language" aria-label="更改面板语言" aria-expanded="false">
+            <svg class="sf-symbol" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.7"></circle><path d="M3.7 12h16.6M12 3.3c2.1 2.4 3.2 5.3 3.2 8.7S14.1 18.3 12 20.7M12 3.3C9.9 5.7 8.8 8.6 8.8 12s1.1 6.3 3.2 8.7"></path></svg>
+          </button>
+          <button type="button" data-panel-action="move" aria-label="移动用量概览面板位置">
+            <svg class="sf-symbol" viewBox="0 0 24 24" aria-hidden="true">
+              <path class="panel-side-icon panel-side-icon-left" d="M20 12H4.5M8 8.5L4.5 12 8 15.5"></path>
+              <path class="panel-side-icon panel-side-icon-right" d="M4 12h15.5M16 8.5l3.5 3.5-3.5 3.5"></path>
+            </svg>
+          </button>
+          <button type="button" data-panel-action="order" aria-label="交换垂直顺序">
+            <svg class="sf-symbol" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 20V4M4.8 7.3L8 4l3.2 3.3M16 4v16M12.8 16.7L16 20l3.2-3.3"></path></svg>
+          </button>
+          <button class="panel-language-picker" type="button" data-panel-language-picker role="spinbutton" aria-label="面板语言" aria-valuetext="简体中文" hidden>简</button>
+        </div>
+        <div class="panel-resize-handle" data-panel-resize aria-label="调整用量概览面板宽度" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="530" aria-valuenow="320" role="separator" tabindex="0">
+          <svg class="panel-resize-symbol" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 12h16M8 8l-4 4 4 4M16 8l4 4-4 4"></path>
+          </svg>
+        </div>
+        <div class="usage-panel-content">
+          <div class="usage-trend">
+            <div class="usage-title">
+              <strong data-panel-copy="usage-title">近 14 天</strong>
+              <strong>18.7M</strong>
+            </div>
+            <div class="usage-bars" aria-hidden="true">
+              <i style="--bar: 8px"></i><i style="--bar: 13px"></i>
+              <i style="--bar: 6px"></i><i style="--bar: 16px"></i>
+              <i style="--bar: 11px"></i><i style="--bar: 20px"></i>
+              <i style="--bar: 14px"></i><i style="--bar: 9px"></i>
+              <i style="--bar: 18px"></i><i style="--bar: 12px"></i>
+              <i style="--bar: 21px"></i><i style="--bar: 15px"></i>
+              <i style="--bar: 17px"></i><i style="--bar: 21px"></i>
+            </div>
+            <div class="usage-dates"><span data-panel-copy="usage-start">7月10日</span><span data-panel-copy="usage-end">7月23日&nbsp;&nbsp;1.42M</span></div>
+          </div>
+          <div class="panel-divider"></div>
+          <div class="weekly-limit">
+            <div class="weekly-title">
+              <strong data-panel-copy="quota-title">周限额</strong>
+              <div class="weekly-quota-status">
+                <span data-panel-copy="quota-used">已用 32%</span>
+                <span data-panel-copy="quota-remaining">剩余 68%</span>
+              </div>
+            </div>
+            <div class="weekly-track"><i></i></div>
+            <div class="weekly-meta"><span data-panel-copy="quota-reset-at">7月27日 08:00 重置</span><span data-panel-copy="quota-daily">日均可用 17%</span></div>
+            <strong class="weekly-countdown" data-panel-copy="quota-reset">3 天 14 小时后重置</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="desktop-dock-panel desktop-task-panel" data-panel="task" data-location="bottom-right" data-align="left" aria-label="任务活动面板">
+        <div class="panel-hover-controls" aria-label="任务活动面板控制">
+          <button type="button" data-panel-action="align" aria-label="切换任务文字对齐">
+            <svg class="sf-symbol" viewBox="0 0 24 24" aria-hidden="true">
+              <path class="panel-align-icon panel-align-icon-auto" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+              <path class="panel-align-icon panel-align-icon-left" d="M4 6h16M4 10h11M4 14h16M4 18h9"></path>
+              <path class="panel-align-icon panel-align-icon-right" d="M4 6h16M9 10h11M4 14h16M11 18h9"></path>
+            </svg>
+          </button>
+          <button type="button" data-panel-action="move" aria-label="移动任务活动面板位置">
+            <svg class="sf-symbol" viewBox="0 0 24 24" aria-hidden="true">
+              <path class="panel-side-icon panel-side-icon-left" d="M20 12H4.5M8 8.5L4.5 12 8 15.5"></path>
+              <path class="panel-side-icon panel-side-icon-right" d="M4 12h15.5M16 8.5l3.5 3.5-3.5 3.5"></path>
+            </svg>
+          </button>
+          <button type="button" data-panel-action="order" aria-label="交换垂直顺序">
+            <svg class="sf-symbol" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 20V4M4.8 7.3L8 4l3.2 3.3M16 4v16M12.8 16.7L16 20l3.2-3.3"></path></svg>
+          </button>
+        </div>
+        <div class="panel-resize-handle" data-panel-resize aria-label="调整任务活动面板宽度" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="530" aria-valuenow="360" role="separator" tabindex="0">
+          <svg class="panel-resize-symbol" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 12h16M8 8l-4 4 4 4M16 8l4 4-4 4"></path>
+          </svg>
+        </div>
+        <div class="task-panel-content">
+          <strong class="project-row">CodexPulse</strong>
+          <button class="session-row task-session-link" type="button" data-raise-codex># 打磨公开发布体验</button>
+          <div class="task-row task-dimmed">
+            <span class="status-done" aria-hidden="true">✓</span>
+            <p>运行完整测试</p>
+            <time>00:38</time>
+          </div>
+          <div class="task-row">
+            <span class="status-done" aria-hidden="true">✓</span>
+            <p>创建 GitHub 公开仓库并启用 Pages</p>
+            <time>08:12</time>
+          </div>
+          <div class="task-row">
+            <span class="status-spinner" aria-hidden="true"></span>
+            <p>像素级复刻两个 Dock 面板</p>
+            <time>01:24</time>
+          </div>
+        </div>
+      </section>
+
+      <nav class="mac-dock" aria-label="Dock">
+        <button type="button" aria-label="Finder"><img class="dock-native-icon" src="./assets/dock-finder.png" alt=""></button>
+        <button type="button" aria-label="Safari"><img class="dock-native-icon" src="./assets/dock-safari.png" alt=""></button>
+        <button type="button" aria-label="Codex" data-raise-codex><img class="dock-app-icon" data-dock-codex-icon src="./assets/codex-icon-dark.png" alt=""></button>
+        <button type="button" aria-label="Terminal"><img class="dock-native-icon" src="./assets/dock-terminal.png" alt=""></button>
+        <button type="button" aria-label="Activity Monitor" data-raise-activity><img class="dock-native-icon" src="./assets/dock-activity-monitor.png" alt=""></button>
+        <span class="dock-divider" aria-hidden="true"></span>
+        <button type="button" aria-label="Trash"><img class="dock-native-icon dock-trash" src="./assets/dock-trash.png" alt=""></button>
+      </nav>
+    </main>
+  </div>
+
+  <div class="mobile-site">
   <a class="skip-link" href="#main" data-i18n="skip">跳到主要内容</a>
 
   <header class="site-header">
@@ -135,8 +370,10 @@
             <div class="weekly-limit">
               <div class="weekly-title">
                 <strong data-i18n="panelWeekly">周限额</strong>
-                <span data-i18n="panelUsed">已用 32%</span>
-                <span data-i18n="panelRemaining">剩余 68%</span>
+                <div class="weekly-quota-status">
+                  <span data-i18n="panelUsed">已用 32%</span>
+                  <span data-i18n="panelRemaining">剩余 68%</span>
+                </div>
               </div>
               <div class="weekly-track"><i></i></div>
               <div class="weekly-meta"><span data-i18n="panelResetAt">7月27日 08:00 重置</span><span data-i18n="panelDaily">日均可用 17%</span></div>
@@ -164,14 +401,14 @@
             </div>
           </section>
 
-          <div class="dock" aria-hidden="true">
-            <span class="dock-icon finder"></span>
-            <span class="dock-icon terminal"></span>
-            <span class="dock-icon codex">
-              <img class="codex-icon-theme codex-icon-dark" src="./assets/codex-icon-dark.png" alt="">
-              <img class="codex-icon-theme codex-icon-light" src="./assets/codex-icon-light.png" alt="">
-            </span>
-            <span class="dock-icon settings"></span>
+          <div class="dock preview-dock" aria-hidden="true">
+            <span class="preview-dock-icon"><img class="dock-native-icon" src="./assets/dock-finder.png" alt=""></span>
+            <span class="preview-dock-icon"><img class="dock-native-icon" src="./assets/dock-safari.png" alt=""></span>
+            <span class="preview-dock-icon"><img class="dock-app-icon" data-dock-codex-icon src="./assets/codex-icon-dark.png" alt=""></span>
+            <span class="preview-dock-icon"><img class="dock-native-icon" src="./assets/dock-terminal.png" alt=""></span>
+            <span class="preview-dock-icon"><img class="dock-native-icon" src="./assets/dock-activity-monitor.png" alt=""></span>
+            <span class="dock-divider" aria-hidden="true"></span>
+            <span class="preview-dock-icon"><img class="dock-native-icon dock-trash" src="./assets/dock-trash.png" alt=""></span>
           </div>
         </div>
         </div>
@@ -254,12 +491,29 @@
         <li class="reveal">
           <span>01</span>
           <div>
+            <h3 data-i18n="installAI">使用 AI 安装</h3>
+            <p class="install-ai-detail" data-i18n="installAIDetail">复制安装提示词</p>
+            <div class="install-ai-prompt">
+              <code>From https://iwecon.github.io/CodexPulse/ to Install CodexPulse. Try Homebrew first, then npm, and finally download and install via the GitHub Release Page.</code>
+              <button class="copy-command install-copy-button" type="button" data-copy="From https://iwecon.github.io/CodexPulse/ to Install CodexPulse. Try Homebrew first, then npm, and finally download and install via the GitHub Release Page." aria-label="复制安装提示词" data-i18n-aria="installAIDetail">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="8" y="7" width="10" height="12" rx="2"></rect>
+                  <path d="M15 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2"></path>
+                </svg>
+                <span class="copy-status" data-i18n="copyAction">复制</span>
+              </button>
+            </div>
+          </div>
+        </li>
+        <li class="reveal">
+          <span>02</span>
+          <div>
             <h3 data-i18n="installDmg">下载 DMG</h3>
             <pre><code>GitHub Releases · arm64 / x86_64</code></pre>
           </div>
         </li>
         <li class="reveal">
-          <span>02</span>
+          <span>03</span>
           <div>
             <h3>Homebrew</h3>
             <pre><code>brew tap iwecon/codex-pulse https://github.com/iwecon/CodexPulse
@@ -267,7 +521,7 @@ brew install --cask iwecon/codex-pulse/codex-pulse</code></pre>
           </div>
         </li>
         <li class="reveal">
-          <span>03</span>
+          <span>04</span>
           <div>
             <h3>npm</h3>
             <pre><code>npm install -g github:iwecon/CodexPulse
@@ -289,6 +543,7 @@ codex-pulse install</code></pre>
     <p data-i18n="footerTagline">本地、克制，贴着 Dock 发生。</p>
     <p>© <span id="year">2026</span> Codex Pulse</p>
   </footer>
+  </div>
 
   <script src="./script.js?v=20260723"></script>
 </body>
