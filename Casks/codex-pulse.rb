@@ -9,7 +9,7 @@ cask "codex-pulse" do
   desc "Codex usage and task activity panels beside the macOS Dock"
   homepage "https://iwecon.github.io/CodexPulse/"
 
-  depends_on macos: ">= :tahoe"
+  depends_on macos: :tahoe
 
   app "Codex Pulse.app"
 
