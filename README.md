@@ -63,16 +63,19 @@ Once npm publishing credentials are configured for this repository, the registry
 
 ### Signing
 
-The GitHub release workflow requires a Developer ID Application certificate and private key. It imports them into a temporary keychain on each macOS runner, signs the app with the hardened runtime and a secure timestamp, signs the DMG with a secure timestamp, verifies both signatures, and removes the temporary signing material even if the build fails. Release builds are not notarized.
+The GitHub release workflow requires a Developer ID Application certificate and private key plus an App Store Connect API key authorized for notarization. On each macOS runner, it imports the signing identity into a temporary keychain, signs the app with the hardened runtime and a secure timestamp, signs the DMG with a secure timestamp, and verifies both signatures. It then submits each architecture's DMG to Apple's notarization service, waits for acceptance, staples the ticket to the DMG, and validates the stapled ticket before uploading the artifact. Temporary signing and notarization credentials are removed even if the build fails.
 
-The Apple account currently intended for releases, `1219i@sina.cn`, must first issue a **Developer ID Application** certificate and export it with its private key as a password-protected PKCS#12 (`.p12`) file. A local Xcode login is not available to GitHub-hosted runners and does not configure CI credentials.
+The Apple account currently intended for releases, `1219i@sina.cn`, must first issue a **Developer ID Application** certificate and export it with its private key as a password-protected PKCS#12 (`.p12`) file. An App Store Connect API key must also be created and its `.p8` private key retained. A local Xcode login is not available to GitHub-hosted runners and does not configure CI credentials.
 
 Configure these GitHub Actions repository secrets before running the release workflow:
 
 - `DEVELOPER_ID_APPLICATION_P12_BASE64`: base64 encoding of the exported `.p12` file.
 - `DEVELOPER_ID_APPLICATION_P12_PASSWORD`: password used when exporting the `.p12` file.
+- `APP_STORE_CONNECT_API_KEY_P8_BASE64`: base64 encoding of the App Store Connect API key's `.p8` file.
+- `APP_STORE_CONNECT_API_KEY_ID`: key ID for the App Store Connect API key.
+- `APP_STORE_CONNECT_API_ISSUER_ID`: issuer ID for the App Store Connect API key.
 
-The workflow fails with a clear error if either secret is absent or the imported file does not contain a usable Developer ID Application identity. Do not add notarization credentials unless notarization is implemented separately.
+The workflow fails with a clear error if a required secret is absent, the imported file does not contain a usable Developer ID Application identity, notarization is not accepted, or stapling validation fails.
 
 Local/manual packaging remains ad hoc by default. To sign explicitly, pass `--signing-identity` (preferably the identity's SHA-1) and, when the identity is isolated in a non-default keychain, `--signing-keychain` to `script/package_release.sh`.
 
@@ -137,7 +140,7 @@ Pushing a tag such as `v0.1.0` triggers `.github/workflows/release.yml`, which b
 - `Codex-Pulse-x86_64.dmg`
 - `SHA256SUMS`
 
-Each build requires the Developer ID secrets described under [Signing](#signing). The workflow then creates or updates the corresponding GitHub Release. If repository variable `PUBLISH_NPM=true` and npm credential `NPM_TOKEN` are configured, the same version is also published as `@iwecon/codex-pulse`.
+Each build requires the Developer ID and App Store Connect API key secrets described under [Signing](#signing). Each architecture's signed DMG is notarized, stapled, and validated before artifact upload. The workflow then creates or updates the corresponding GitHub Release. If repository variable `PUBLISH_NPM=true` and npm credential `NPM_TOKEN` are configured, the same version is also published as `@iwecon/codex-pulse`.
 
 ## Test
 
