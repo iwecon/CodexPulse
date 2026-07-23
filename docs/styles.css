@@ -1404,6 +1404,7 @@ footer p {
 
   .hero {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 48px;
     min-height: auto;
     position: static;
@@ -1414,6 +1415,7 @@ footer p {
   .hero-copy {
     position: static;
     width: 100%;
+    min-width: 0;
     max-width: none;
     text-shadow: none;
   }
@@ -1432,13 +1434,21 @@ footer p {
 
   .product-stage {
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    container-type: inline-size;
   }
 
   .mockup-frame {
     --mockup-width: 1320;
     --mockup-height: 742.5;
-    --mockup-scale: min(1, calc((100vw - var(--page-pad) * 2) / (var(--mockup-width) * 1px)));
+    --mockup-scale: min(1, calc(100cqw / (var(--mockup-width) * 1px)));
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
     height: calc(var(--mockup-height) * 1px * var(--mockup-scale));
+    overflow: hidden;
+    contain: layout paint;
   }
 
   .desktop {
