@@ -1028,6 +1028,9 @@ struct TaskExecutionView: View {
             let alignTrailing = presentation.taskActivityTextAlignment.resolved(
                 for: presentation.taskSide
             ) == .right
+            let emptyStateAlignTrailing = TaskExecutionLayout.emptyStateTextAlignment(
+                for: presentation.taskSide
+            ) == .right
             let plan = TaskExecutionLayout.plan(for: model.tasks, panelWidth: proxy.size.width)
             let visibleTaskIDs = Set(
                 plan.projects.flatMap { project in
@@ -1046,7 +1049,7 @@ struct TaskExecutionView: View {
                             maxWidth: .infinity,
                             minHeight: TaskExecutionLayout.emptyStateHeight,
                             maxHeight: TaskExecutionLayout.emptyStateHeight,
-                            alignment: alignTrailing ? .trailing : .leading
+                            alignment: emptyStateAlignTrailing ? .trailing : .leading
                         )
                 } else {
                     ForEach(plan.projects) { project in

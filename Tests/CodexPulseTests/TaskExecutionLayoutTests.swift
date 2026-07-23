@@ -28,6 +28,11 @@ private func layoutTask(
     #expect(plan.panelHeight < TaskExecutionLayout.maximumHeight)
 }
 
+@Test func taskExecutionEmptyStateAlignmentFollowsPanelSide() {
+    #expect(TaskExecutionLayout.emptyStateTextAlignment(for: .left) == .left)
+    #expect(TaskExecutionLayout.emptyStateTextAlignment(for: .right) == .right)
+}
+
 @Test func taskExecutionLayoutSizesOneTaskExactly() throws {
     let plan = TaskExecutionLayout.plan(for: [layoutTask("task-1")])
 

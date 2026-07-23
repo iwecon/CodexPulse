@@ -37,6 +37,10 @@ struct TaskExecutionLayout {
         let threadID: String
     }
 
+    static func emptyStateTextAlignment(for panelSide: PanelSide) -> TaskActivityTextAlignment {
+        panelSide == .left ? .left : .right
+    }
+
     static func taskRowHeight(for task: TaskExecution, panelWidth: CGFloat) -> CGFloat {
         let horizontalInsets = DockPanelContentLayout.horizontalInset * 2
         let fixedContentWidth: CGFloat = 8 + 9 + 6 + 2 + 45
