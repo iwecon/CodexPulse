@@ -1,0 +1,34 @@
+{
+  "name": "@iwecon/codex-pulse",
+  "version": "0.1.0",
+  "description": "Installer CLI for the Codex Pulse macOS app",
+  "license": "UNLICENSED",
+  "homepage": "https://iwecon.github.io/CodexPulse/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iwecon/CodexPulse.git"
+  },
+  "bugs": {
+    "url": "https://github.com/iwecon/CodexPulse/issues"
+  },
+  "type": "commonjs",
+  "bin": {
+    "codex-pulse": "npm/bin/codex-pulse.js"
+  },
+  "files": [
+    "npm/bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version without the v prefix"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-26
+          - arch: x86_64
+            runner: macos-26-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve version
+        id: release
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            tag="$GITHUB_REF_NAME"
+          else
+            version="$INPUT_VERSION"
+            tag="v$version"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid semantic version: $version" >&2
+            exit 64
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Build and package DMG
+        run: ./script/package_release.sh --arch "${{ matrix.arch }}" --version "${{ steps.release.outputs.version }}" --output dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Codex-Pulse-${{ matrix.arch }}
+          path: dist/Codex-Pulse-${{ matrix.arch }}.dmg
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve version
+        id: release
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            tag="$GITHUB_REF_NAME"
+          else
+            version="$INPUT_VERSION"
+            tag="v$version"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid semantic version: $version" >&2
+            exit 64
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Codex-Pulse-*
+          path: dist
+          merge-multiple: true
+      - name: Generate checksums
+        run: cd dist && sha256sum Codex-Pulse-*.dmg > SHA256SUMS
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            tagged_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)"
+            if [[ "$tagged_sha" != "$GITHUB_SHA" ]]; then
+              echo "Refusing to overwrite $RELEASE_TAG assets from $GITHUB_SHA; the tag points to $tagged_sha" >&2
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/* \
+              --target "$GITHUB_SHA" \
+              --title "Codex Pulse $RELEASE_VERSION" \
+              --generate-notes
+          fi
+
+  publish-npm:
+    name: Publish npm package
+    needs: publish-release
+    if: ${{ vars.PUBLISH_NPM == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Set package version
+        run: npm version "${{ needs.publish-release.outputs.version }}" --no-git-tag-version
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_VERSION: ${{ needs.publish-release.outputs.version }}
+        run: |
+          if npm view "@iwecon/codex-pulse@$RELEASE_VERSION" version >/dev/null 2>&1; then
+            echo "@iwecon/codex-pulse@$RELEASE_VERSION is already published"
+          else
+            npm publish --access public --provenance
+          fi

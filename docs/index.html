@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="auto">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,36 +9,57 @@
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <a class="skip-link" href="#main">跳到主要内容</a>
+  <a class="skip-link" href="#main" data-i18n="skip">跳到主要内容</a>
 
   <header class="site-header">
-    <a class="brand" href="#top" aria-label="Codex Pulse 首页">
+    <a class="brand" href="#top" aria-label="Codex Pulse 首页" data-i18n-aria="brandHome">
       <svg class="brand-mark" viewBox="0 0 48 32" aria-hidden="true">
         <path d="M2 17h7l3-8 5 17 5-23 5 26 5-17 4 9h10" />
       </svg>
       <span>Codex Pulse</span>
     </a>
-    <nav aria-label="主要导航">
-      <a href="#features">功能</a>
-      <a href="#privacy">隐私</a>
-      <a class="nav-cta" href="#start">开始使用</a>
+    <nav aria-label="主要导航" data-i18n-aria="navigation">
+      <a href="#features" data-i18n="navFeatures">功能</a>
+      <a href="#privacy" data-i18n="navPrivacy">隐私</a>
+      <div class="nav-controls">
+        <label class="control-select">
+          <span class="sr-only" data-i18n="themeLabel">主题</span>
+          <select id="theme-select" aria-label="主题" data-i18n-aria="themeLabel">
+            <option value="auto" data-i18n="themeAuto">Auto</option>
+            <option value="light" data-i18n="themeLight">Light</option>
+            <option value="dark" data-i18n="themeDark">Dark</option>
+          </select>
+        </label>
+        <label class="control-select">
+          <span class="sr-only" data-i18n="languageLabel">语言</span>
+          <select id="language-select" aria-label="语言" data-i18n-aria="languageLabel">
+            <option value="zh-CN">简体中文</option>
+            <option value="zh-HK">繁體中文（香港）</option>
+            <option value="zh-TW">繁體中文（台灣）</option>
+            <option value="ja">日本語</option>
+            <option value="ko">한국어</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+      </div>
+      <a class="nav-cta" href="#start" data-i18n="navStart">开始使用</a>
     </nav>
   </header>
 
   <main id="main">
     <section class="hero" id="top">
       <div class="hero-copy">
-        <h1>让 Codex 的每一次脉动，<br>都留在桌面上。</h1>
-        <p>贴着 Dock 查看 Token 用量、周额度与任务状态。只读本机数据，不打断当前工作。</p>
+        <h1 data-i18n-html="heroTitle">让 Codex 的每一次脉动，<br>都留在桌面上。</h1>
+        <p data-i18n="heroBody">贴着 Dock 查看 Token 用量、周额度与任务状态。只读本机数据，不打断当前工作。</p>
         <div class="hero-actions">
           <a class="button button-primary" href="https://github.com/iwecon/CodexPulse">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 .9a11.2 11.2 0 0 0-3.54 21.82c.56.1.76-.24.76-.54v-2.15c-3.13.68-3.79-1.33-3.79-1.33-.51-1.3-1.25-1.65-1.25-1.65-1.02-.7.08-.69.08-.69 1.13.08 1.72 1.16 1.72 1.16 1 1.72 2.63 1.22 3.27.93.1-.73.39-1.22.71-1.5-2.5-.29-5.13-1.25-5.13-5.56 0-1.23.44-2.23 1.16-3.02-.12-.28-.5-1.43.11-2.98 0 0 .95-.3 3.08 1.15A10.7 10.7 0 0 1 12 6.16c.95 0 1.9.13 2.8.38 2.14-1.45 3.08-1.15 3.08-1.15.62 1.55.23 2.7.12 2.98.72.79 1.16 1.8 1.16 3.02 0 4.32-2.64 5.27-5.15 5.55.4.35.77 1.04.77 2.1v3.14c0 .3.2.65.77.54A11.2 11.2 0 0 0 12 .9Z" />
             </svg>
-            在 GitHub 查看
+            <span data-i18n="viewGithub">在 GitHub 查看</span>
           </a>
           <a class="button button-secondary" href="#start">
-            快速开始
+            <span data-i18n="quickStart">快速开始</span>
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="m9 5 7 7-7 7" />
             </svg>
@@ -46,23 +67,57 @@
         </div>
       </div>
 
-      <div class="product-stage" id="preview" aria-label="Codex Pulse 界面示意">
+      <div class="product-stage" id="preview" aria-label="Codex Pulse 界面示意" data-i18n-aria="previewLabel">
+        <div class="mockup-frame">
         <div class="desktop">
           <div class="desktop-bar">
             <span class="desktop-apple">●</span>
             <span>Codex</span>
-            <span>文件</span>
-            <span>编辑</span>
-            <span>窗口</span>
+            <span data-i18n="menuFile">文件</span>
+            <span data-i18n="menuEdit">编辑</span>
+            <span data-i18n="menuWindow">窗口</span>
             <time>9:41</time>
           </div>
           <div class="wallpaper-orbit orbit-one"></div>
           <div class="wallpaper-orbit orbit-two"></div>
 
-          <section class="dock-panel usage-panel" aria-label="用量概览面板示意">
+          <section class="codex-window" aria-label="Codex 窗口示意" data-i18n-aria="codexWindowLabel">
+            <div class="codex-titlebar">
+              <span class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <strong>Codex</strong>
+              <span class="window-actions" aria-hidden="true">⌘ K　＋</span>
+            </div>
+            <div class="codex-shell">
+              <aside class="codex-sidebar">
+                <div class="codex-account">
+                  <img class="codex-icon-theme codex-icon-dark" src="./assets/codex-icon-dark.png" alt="">
+                  <img class="codex-icon-theme codex-icon-light" src="./assets/codex-icon-light.png" alt="">
+                  <span>Codex</span>
+                </div>
+                <b data-i18n="codexNewTask">新任务</b>
+                <span data-i18n="codexThread1">完善发布体验</span>
+                <span data-i18n="codexThread2">优化面板布局</span>
+                <span data-i18n="codexThread3">验证用量扫描</span>
+              </aside>
+              <div class="codex-content">
+                <div class="codex-thread-title">
+                  <strong data-i18n="codexThread1">完善发布体验</strong>
+                  <span>CodexPulse</span>
+                </div>
+                <div class="codex-message user-message" data-i18n="codexPrompt">把落地页的预览做得和真实应用一致，并提供双架构安装包。</div>
+                <div class="codex-message assistant-message">
+                  <span class="status-done" aria-hidden="true">✓</span>
+                  <p data-i18n="codexReply">已完成面板复刻、主题切换与发布配置。</p>
+                </div>
+                <div class="codex-composer" data-i18n="codexComposer">继续向 Codex 提问…</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="dock-panel usage-panel" aria-label="用量概览面板示意" data-i18n-aria="usagePanelLabel">
             <div class="usage-trend">
               <div class="usage-title">
-                <strong>近 14 天</strong>
+                <strong data-i18n="panelLast14">近 14 天</strong>
                 <strong>18.7M</strong>
               </div>
               <div class="usage-bars" aria-hidden="true">
@@ -74,37 +129,37 @@
                 <i style="--bar: 21px"></i><i style="--bar: 15px"></i>
                 <i style="--bar: 17px"></i><i style="--bar: 21px"></i>
               </div>
-              <div class="usage-dates"><span>7月10日</span><span>7月23日&nbsp;&nbsp;1.42M</span></div>
+              <div class="usage-dates"><span data-i18n="panelDateStart">7月10日</span><span data-i18n="panelDateEnd">7月23日&nbsp;&nbsp;1.42M</span></div>
             </div>
             <div class="panel-divider"></div>
             <div class="weekly-limit">
               <div class="weekly-title">
-                <strong>周限额</strong>
-                <span>已用 32%</span>
-                <span>剩余 68%</span>
+                <strong data-i18n="panelWeekly">周限额</strong>
+                <span data-i18n="panelUsed">已用 32%</span>
+                <span data-i18n="panelRemaining">剩余 68%</span>
               </div>
               <div class="weekly-track"><i></i></div>
-              <div class="weekly-meta"><span>7月27日 08:00 重置</span><span>日均可用 17%</span></div>
-              <strong class="weekly-countdown">3 天 14 小时后重置</strong>
+              <div class="weekly-meta"><span data-i18n="panelResetAt">7月27日 08:00 重置</span><span data-i18n="panelDaily">日均可用 17%</span></div>
+              <strong class="weekly-countdown" data-i18n="panelCountdown">3 天 14 小时后重置</strong>
             </div>
           </section>
 
-          <section class="dock-panel task-panel" aria-label="任务活动面板示意">
+          <section class="dock-panel task-panel" aria-label="任务活动面板示意" data-i18n-aria="taskPanelLabel">
             <strong class="project-row">CodexPulse</strong>
-            <div class="session-row"># 打磨公开发布体验</div>
+            <div class="session-row" data-i18n="panelSession"># 打磨公开发布体验</div>
             <div class="task-row">
               <span class="status-spinner" aria-hidden="true"></span>
-              <p>像素级复刻两个 Dock 面板</p>
+              <p data-i18n="panelTask1">像素级复刻两个 Dock 面板</p>
               <time>01:24</time>
             </div>
             <div class="task-row">
               <span class="status-done" aria-hidden="true">✓</span>
-              <p>创建 GitHub 公开仓库并启用 Pages</p>
+              <p data-i18n="panelTask2">创建 GitHub 公开仓库并启用 Pages</p>
               <time>08:12</time>
             </div>
             <div class="task-row task-dimmed">
               <span class="status-done" aria-hidden="true">✓</span>
-              <p>运行完整测试</p>
+              <p data-i18n="panelTask3">运行完整测试</p>
               <time>00:38</time>
             </div>
           </section>
@@ -113,29 +168,31 @@
             <span class="dock-icon finder"></span>
             <span class="dock-icon terminal"></span>
             <span class="dock-icon codex">
-              <svg viewBox="0 0 24 24"><path d="M3 12h4l2-6 3 13 3-10 2 6h4"/></svg>
+              <img class="codex-icon-theme codex-icon-dark" src="./assets/codex-icon-dark.png" alt="">
+              <img class="codex-icon-theme codex-icon-light" src="./assets/codex-icon-light.png" alt="">
             </span>
             <span class="dock-icon settings"></span>
           </div>
         </div>
-        <p class="mockup-note">HTML/CSS 界面复刻 · 演示数据</p>
+        </div>
+        <p class="mockup-note" data-i18n="mockupNote">HTML/CSS 界面复刻 · 演示数据</p>
       </div>
     </section>
 
     <section class="features" id="features">
       <div class="section-intro reveal">
-        <h2>专注写代码，<br>其余交给桌面。</h2>
-        <p>两个透明、非激活面板安静地贴在 Dock 两侧。需要时扫一眼，不需要时它们留在应用窗口之后。</p>
+        <h2 data-i18n-html="featuresTitle">专注写代码，<br>其余交给桌面。</h2>
+        <p data-i18n="featuresBody">两个透明、非激活面板安静地贴在 Dock 两侧。需要时扫一眼，不需要时它们留在应用窗口之后。</p>
       </div>
 
       <article class="feature feature-usage reveal">
         <div class="feature-number">01</div>
         <div class="feature-copy">
-          <h3>用量一眼看清</h3>
-          <p>14 天 Token 趋势、今日消耗、周额度与重置倒计时，安静地待在 Dock 一侧。</p>
+          <h3 data-i18n="featureUsageTitle">用量一眼看清</h3>
+          <p data-i18n="featureUsageBody">14 天 Token 趋势、今日消耗、周额度与重置倒计时，安静地待在 Dock 一侧。</p>
         </div>
         <div class="feature-visual trend-visual" aria-hidden="true">
-          <div class="trend-meta"><span>最近 14 天</span><strong>今日 1.42M</strong></div>
+          <div class="trend-meta"><span data-i18n="trendLast14">最近 14 天</span><strong data-i18n="trendToday">今日 1.42M</strong></div>
           <svg viewBox="0 0 720 220" preserveAspectRatio="none">
             <path class="large-chart-fill" d="M0 184 C54 174 86 110 138 132 S220 200 276 124 S380 42 432 86 S510 174 560 103 S650 44 720 25 V220 H0Z"/>
             <path class="large-chart-line" d="M0 184 C54 174 86 110 138 132 S220 200 276 124 S380 42 432 86 S510 174 560 103 S650 44 720 25"/>
@@ -146,21 +203,21 @@
       <article class="feature feature-tasks reveal">
         <div class="feature-number">02</div>
         <div class="feature-copy">
-          <h3>任务状态，贴着 Dock 发生</h3>
-          <p>按项目与会话查看执行中和最近完成的任务，会话标题可以直接回到 Codex。</p>
+          <h3 data-i18n="featureTasksTitle">任务状态，贴着 Dock 发生</h3>
+          <p data-i18n="featureTasksBody">按项目与会话查看执行中和最近完成的任务，会话标题可以直接回到 Codex。</p>
         </div>
         <div class="feature-visual task-visual" aria-hidden="true">
-          <div class="mini-session"><strong>CodexPulse</strong><span>发布落地页</span></div>
-          <div class="mini-task"><i class="status-spinner"></i><span>验证桌面与移动端视觉</span><time>42s</time></div>
-          <div class="mini-task"><i class="status-done">✓</i><span>运行完整测试</span><time>3m</time></div>
+          <div class="mini-session"><strong>CodexPulse</strong><span data-i18n="miniSession">发布落地页</span></div>
+          <div class="mini-task"><i class="status-spinner"></i><span data-i18n="miniTask1">验证桌面与移动端视觉</span><time>42s</time></div>
+          <div class="mini-task"><i class="status-done">✓</i><span data-i18n="miniTask2">运行完整测试</span><time>3m</time></div>
         </div>
       </article>
 
       <article class="feature feature-placement reveal">
         <div class="feature-number">03</div>
         <div class="feature-copy">
-          <h3>跟着你的桌面走</h3>
-          <p>支持 Dock 位于底部、左侧或右侧，面板位置、宽度与文字对齐均可调整并保存。</p>
+          <h3 data-i18n="featurePlacementTitle">跟着你的桌面走</h3>
+          <p data-i18n="featurePlacementBody">支持 Dock 位于底部、左侧或右侧，面板位置、宽度与文字对齐均可调整并保存。</p>
         </div>
         <div class="feature-visual placement-visual" aria-hidden="true">
           <div class="placement-screen dock-bottom"><i></i><b></b><span></span></div>
@@ -178,45 +235,47 @@
         </svg>
       </div>
       <div class="privacy-copy reveal">
-        <h2>你的数据，<br>不离开这台 Mac。</h2>
-        <p>Codex Pulse 只读扫描本机 Codex 会话日志与任务索引，不上传用量数据，也不会修改原始记录。</p>
+        <h2 data-i18n-html="privacyTitle">你的数据，<br>不离开这台 Mac。</h2>
+        <p data-i18n="privacyBody">Codex Pulse 只读扫描本机 Codex 会话日志与任务索引，不上传用量数据，也不会修改原始记录。</p>
         <ul>
-          <li><span>01</span>仅启用 Codex 数据源</li>
-          <li><span>02</span>无需屏幕录制权限</li>
-          <li><span>03</span>休眠或锁屏时暂停刷新</li>
+          <li><span>01</span><b data-i18n="privacy1">仅启用 Codex 数据源</b></li>
+          <li><span>02</span><b data-i18n="privacy2">无需屏幕录制权限</b></li>
+          <li><span>03</span><b data-i18n="privacy3">休眠或锁屏时暂停刷新</b></li>
         </ul>
       </div>
     </section>
 
     <section class="start" id="start">
       <div class="start-heading reveal">
-        <h2>三步开始。</h2>
-        <p>需要 macOS 26+、Xcode 26+ / Swift 6.2+ 与 SQLite 3。</p>
+        <h2 data-i18n="startTitle">选择安装方式。</h2>
+        <p data-i18n="startBody">需要 macOS 26+。GitHub Release 会分别提供 Apple 芯片与 Intel 芯片版本。</p>
       </div>
       <ol class="steps">
         <li class="reveal">
           <span>01</span>
           <div>
-            <h3>克隆仓库</h3>
-            <pre><code>git clone https://github.com/iwecon/CodexPulse.git</code></pre>
+            <h3 data-i18n="installDmg">下载 DMG</h3>
+            <pre><code>GitHub Releases · arm64 / x86_64</code></pre>
           </div>
         </li>
         <li class="reveal">
           <span>02</span>
           <div>
-            <h3>进入项目</h3>
-            <pre><code>cd CodexPulse</code></pre>
+            <h3>Homebrew</h3>
+            <pre><code>brew tap iwecon/codex-pulse https://github.com/iwecon/CodexPulse
+brew install --cask iwecon/codex-pulse/codex-pulse</code></pre>
           </div>
         </li>
         <li class="reveal">
           <span>03</span>
           <div>
-            <h3>运行应用</h3>
-            <pre><code>swift run "Codex Pulse"</code></pre>
+            <h3>npm</h3>
+            <pre><code>npm install -g github:iwecon/CodexPulse
+codex-pulse install</code></pre>
           </div>
         </li>
       </ol>
-      <a class="button button-primary start-cta" href="https://github.com/iwecon/CodexPulse">查看源码</a>
+      <a class="button button-primary start-cta" href="https://github.com/iwecon/CodexPulse/releases/latest" data-i18n="downloadLatest">下载最新版</a>
     </section>
   </main>
 
@@ -227,7 +286,7 @@
       </svg>
       <span>Codex Pulse</span>
     </a>
-    <p>本地、克制，贴着 Dock 发生。</p>
+    <p data-i18n="footerTagline">本地、克制，贴着 Dock 发生。</p>
     <p>© <span id="year">2026</span> Codex Pulse</p>
   </footer>
 
