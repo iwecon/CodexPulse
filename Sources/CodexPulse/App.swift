@@ -200,11 +200,13 @@ final class DockPanelController {
     private let wallpaperAppearanceSampler = WallpaperAppearanceSampler()
     private var wallpaperAppearanceTask: Task<Void, Never>?
     private var wallpaperAppearanceGeneration = 0
+    private var wallpaperRefreshTracker = WallpaperRefreshTracker()
     private var usageOverviewAppearance: PanelSemanticAppearance?
     private var taskActivityAppearance: PanelSemanticAppearance?
     private var effectiveAppearanceObservation: NSKeyValueObservation?
     private var observedSystemAppearance: PanelSemanticAppearance?
     private var appearanceChangeResampleTask: Task<Void, Never>?
+    private var notificationObservers: [NSObjectProtocol] = []
     private lazy var sessionLinkController = CodexSessionLinkController()
     private lazy var resizeController = DockPanelResizeController(
         panelFrame: { [weak self] identity in
@@ -261,12 +263,26 @@ final class DockPanelController {
             size: NSSize(width: preferences.taskActivityPreferredWidth, height: taskPlan.panelHeight)
         )
         observedSystemAppearance = Self.currentSystemAppearance
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.positionPanels() }
+        })
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        for name in [
+            NSWorkspace.activeSpaceDidChangeNotification,
+            NSWorkspace.sessionDidBecomeActiveNotification,
+            NSWorkspace.screensDidWakeNotification
+        ] {
+            notificationObservers.append(workspaceCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.positionPanels() }
+            })
         }
         effectiveAppearanceObservation = NSApplication.shared.observe(
             \.effectiveAppearance,
@@ -306,8 +322,11 @@ final class DockPanelController {
         return panel
     }
 
-    private func positionPanels() {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+    private func positionPanels(forceWallpaperRefresh: Bool = false) {
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else {
+            removeWallpaperRefreshState()
+            return
+        }
         let frame = screen.frame
         let visible = screen.visibleFrame
         let edge = dockEdge(frame: frame, visible: visible)
@@ -359,16 +378,15 @@ final class DockPanelController {
             dockFrame: dockFrame,
             dockEdge: edge
         ))
-        updateWallpaperAppearances(on: screen)
+        updateWallpaperAppearances(on: screen, force: forceWallpaperRefresh)
     }
 
-    private func updateWallpaperAppearances(on screen: NSScreen) {
-        wallpaperAppearanceGeneration += 1
-        let generation = wallpaperAppearanceGeneration
-        wallpaperAppearanceTask?.cancel()
-
+    private func updateWallpaperAppearances(on screen: NSScreen, force: Bool) {
         let workspace = NSWorkspace.shared
-        guard let url = workspace.desktopImageURL(for: screen) else { return }
+        guard let url = workspace.desktopImageURL(for: screen) else {
+            removeWallpaperRefreshState()
+            return
+        }
         let options = workspace.desktopImageOptions(for: screen)
         let scalingRawValue = (options?[.imageScaling] as? NSNumber)?.uintValue
         let scaling = scalingRawValue.flatMap(NSImageScaling.init(rawValue:))
@@ -376,6 +394,42 @@ final class DockPanelController {
         let allowClipping = (options?[.allowClipping] as? NSNumber)?.boolValue ?? false
         let fillColor = Self.wallpaperRGB(from: options?[.fillColor] as? NSColor)
         let screenOrigin = screen.frame.origin
+        let panelRegions = [
+            WallpaperRefreshState.PanelRegion(
+                identifier: 0,
+                frame: leftPanel.frame.offsetBy(dx: -screenOrigin.x, dy: -screenOrigin.y)
+            ),
+            WallpaperRefreshState.PanelRegion(
+                identifier: 1,
+                frame: rightPanel.frame.offsetBy(dx: -screenOrigin.x, dy: -screenOrigin.y)
+            )
+        ]
+        let resourceValues = try? url.resourceValues(forKeys: [
+            .contentModificationDateKey,
+            .fileSizeKey
+        ])
+        let refreshState = WallpaperRefreshState(
+            signature: WallpaperStateSignature(
+                image: .init(
+                    url: url,
+                    modificationDate: resourceValues?.contentModificationDate,
+                    fileSize: resourceValues?.fileSize
+                ),
+                imageScalingRawValue: scaling.rawValue,
+                allowClipping: allowClipping,
+                fillColor: fillColor
+            ),
+            screenIdentifier: (screen.deviceDescription[.init("NSScreenNumber")] as? NSNumber)?.uint32Value,
+            screenSize: screen.frame.size,
+            panelRegions: panelRegions
+        )
+        let transition = wallpaperRefreshTracker.transition(to: refreshState)
+        guard force || transition != .unchanged else { return }
+
+        wallpaperAppearanceGeneration += 1
+        let generation = wallpaperAppearanceGeneration
+        wallpaperAppearanceTask?.cancel()
+
         let request = WallpaperAppearanceRequest(
             url: url,
             screenSize: screen.frame.size,
@@ -384,17 +438,20 @@ final class DockPanelController {
             panelRegions: [
                 WallpaperPanelRegion(
                     identifier: 0,
-                    frame: leftPanel.frame.offsetBy(dx: -screenOrigin.x, dy: -screenOrigin.y),
+                    frame: panelRegions[0].frame,
                     previousAppearance: usageOverviewAppearance
                 ),
                 WallpaperPanelRegion(
                     identifier: 1,
-                    frame: rightPanel.frame.offsetBy(dx: -screenOrigin.x, dy: -screenOrigin.y),
+                    frame: panelRegions[1].frame,
                     previousAppearance: taskActivityAppearance
                 )
             ]
         )
         wallpaperAppearanceTask = Task { [weak self, wallpaperAppearanceSampler] in
+            if case .resample(invalidateDecodedWallpaper: true) = transition {
+                await wallpaperAppearanceSampler.invalidateCache()
+            }
             let appearances = await wallpaperAppearanceSampler.appearances(for: request)
             guard !Task.isCancelled, let self,
                   wallpaperAppearanceGeneration == generation else {
@@ -408,6 +465,16 @@ final class DockPanelController {
                 apply(result.appearance, toPanelWithIdentifier: result.identifier)
             }
         }
+    }
+
+    private func removeWallpaperRefreshState() {
+        guard wallpaperRefreshTracker.transition(to: nil) == .removed else { return }
+        wallpaperAppearanceGeneration += 1
+        wallpaperAppearanceTask?.cancel()
+        wallpaperAppearanceTask = nil
+        let fallbackAppearance = Self.currentSystemAppearance
+        apply(fallbackAppearance, toPanelWithIdentifier: 0)
+        apply(fallbackAppearance, toPanelWithIdentifier: 1)
     }
 
     private func effectiveAppearanceDidChange() {
@@ -432,7 +499,7 @@ final class DockPanelController {
             guard let self else { return }
             usageOverviewAppearance = nil
             taskActivityAppearance = nil
-            positionPanels()
+            positionPanels(forceWallpaperRefresh: true)
         }
     }
 

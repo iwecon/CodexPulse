@@ -44,6 +44,53 @@ struct WallpaperRGB: Sendable, Equatable {
     }
 }
 
+struct WallpaperStateSignature: Sendable, Equatable {
+    struct ImageIdentity: Sendable, Equatable {
+        let url: URL
+        let modificationDate: Date?
+        let fileSize: Int?
+    }
+
+    let image: ImageIdentity
+    let imageScalingRawValue: UInt
+    let allowClipping: Bool
+    let fillColor: WallpaperRGB?
+}
+
+struct WallpaperRefreshState: Sendable, Equatable {
+    struct PanelRegion: Sendable, Equatable {
+        let identifier: Int
+        let frame: CGRect
+    }
+
+    let signature: WallpaperStateSignature
+    let screenIdentifier: UInt32?
+    let screenSize: CGSize
+    let panelRegions: [PanelRegion]
+}
+
+enum WallpaperRefreshTransition: Sendable, Equatable {
+    case unchanged
+    case resample(invalidateDecodedWallpaper: Bool)
+    case removed
+}
+
+struct WallpaperRefreshTracker: Sendable {
+    private(set) var state: WallpaperRefreshState?
+
+    mutating func transition(to newState: WallpaperRefreshState?) -> WallpaperRefreshTransition {
+        guard state != newState else { return .unchanged }
+        let previousState = state
+        state = newState
+        guard let newState else { return .removed }
+        return .resample(
+            invalidateDecodedWallpaper: previousState.map {
+                $0.signature.image != newState.signature.image
+            } ?? false
+        )
+    }
+}
+
 enum WallpaperSamplingGeometry {
     static func imageRect(
         imageSize: CGSize,
