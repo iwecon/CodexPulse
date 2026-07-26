@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.iwecon.CodexPulse</string>
+	<key>CFBundleName</key>
+	<string>Codex Pulse</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Codex Pulse reads the photo used as your desktop wallpaper to pick a readable panel text color. Nothing is uploaded or stored.</string>
+</dict>
+</plist>

@@ -489,8 +489,6 @@ enum WallpaperSamplingGeometry {
 }
 
 enum WallpaperAppearanceSelection {
-    static let switchToDarkThreshold = 0.14
-    static let switchToLightThreshold = 0.23
 
     static func contrastRatio(
         foregroundLuminance: Double,
@@ -501,48 +499,18 @@ enum WallpaperAppearanceSelection {
         return (lighter + 0.05) / (darker + 0.05)
     }
 
-    static func preferredAppearance(forRelativeLuminance luminance: Double) -> PanelSemanticAppearance {
-        let blackContrast = contrastRatio(foregroundLuminance: 0, backgroundLuminance: luminance)
-        let whiteContrast = contrastRatio(foregroundLuminance: 1, backgroundLuminance: luminance)
-        return blackContrast >= whiteContrast ? .light : .dark
+    static func preferredAppearance(for color: WallpaperRGB) -> PanelSemanticAppearance {
+        AdaptiveTextColor.appearance(forCandidateColors: [color], previous: nil) ?? .dark
     }
 
-    static func appearance(
-        forRelativeLuminance luminance: Double,
-        previous: PanelSemanticAppearance?
-    ) -> PanelSemanticAppearance {
-        switch previous {
-        case .dark:
-            luminance >= switchToLightThreshold ? .light : .dark
-        case .light:
-            luminance <= switchToDarkThreshold ? .dark : .light
-        case nil:
-            preferredAppearance(forRelativeLuminance: luminance)
-        }
-    }
-
+    /// Chooses dark or light text with maximin APCA perceptual contrast; the
+    /// hysteresis band keeps the previous appearance when both polarities are
+    /// perceptually equivalent.
     static func appearance(
         forCandidateColors colors: [WallpaperRGB],
         previous: PanelSemanticAppearance?
     ) -> PanelSemanticAppearance? {
-        guard !colors.isEmpty else { return nil }
-        guard colors.count > 1 else {
-            return appearance(
-                forRelativeLuminance: colors[0].relativeLuminance,
-                previous: previous
-            )
-        }
-        let luminances = colors.map(\.relativeLuminance)
-        let blackMinimum = luminances.map {
-            contrastRatio(foregroundLuminance: 0, backgroundLuminance: $0)
-        }.min() ?? 0
-        let whiteMinimum = luminances.map {
-            contrastRatio(foregroundLuminance: 1, backgroundLuminance: $0)
-        }.min() ?? 0
-        if abs(blackMinimum - whiteMinimum) <= 0.15, let previous {
-            return previous
-        }
-        return blackMinimum >= whiteMinimum ? .light : .dark
+        AdaptiveTextColor.appearance(forCandidateColors: colors, previous: previous)
     }
 }
 
@@ -599,6 +567,15 @@ struct WallpaperPanelAppearance: Sendable, Equatable {
     let identifier: Int
     let backgroundColor: WallpaperRGB
     let appearance: PanelSemanticAppearance
+    /// Concrete text color: the background hue continued at near-black or
+    /// near-white lightness with a guaranteed contrast ratio.
+    let textColor: WallpaperRGB
+}
+
+/// Loads the pixels of a Photos-library asset for wallpaper sampling.
+/// PhotoKit access lives behind this protocol so tests can substitute images.
+protocol WallpaperPhotoImageLoading: Sendable {
+    func image(forAssetIdentifier identifier: String) async -> CGImage?
 }
 
 actor WallpaperAppearanceSampler {
@@ -630,15 +607,45 @@ actor WallpaperAppearanceSampler {
                 blue: blue * alpha + fill.blue * (1 - alpha)
             )
         }
+
+        /// Averages every pixel into one color, independent of any screen geometry.
+        /// Used for uniform-color assets that represent the whole desktop.
+        func uniformColor(compositedOver fill: WallpaperRGB?) -> WallpaperRGB? {
+            var red = 0.0
+            var green = 0.0
+            var blue = 0.0
+            var sampled = 0.0
+            for y in 0..<height {
+                for x in 0..<width {
+                    guard let color = color(
+                        at: CGPoint(x: x, y: y),
+                        compositedOver: fill
+                    ) else { continue }
+                    red += color.red
+                    green += color.green
+                    blue += color.blue
+                    sampled += 1
+                }
+            }
+            guard sampled > 0 else { return fill }
+            return WallpaperRGB(red: red / sampled, green: green / sampled, blue: blue / sampled)
+        }
     }
 
     private static let maximumCachedAssets = 6
     private var cachedWallpapers: [WallpaperSourceCandidate: [DecodedWallpaper]] = [:]
     private var cacheOrder: [WallpaperSourceCandidate] = []
+    private let photoImageLoader: (any WallpaperPhotoImageLoading)?
+    private var cachedPhotoAssets: [String: DecodedWallpaper] = [:]
+
+    init(photoImageLoader: (any WallpaperPhotoImageLoading)? = nil) {
+        self.photoImageLoader = photoImageLoader
+    }
 
     func invalidateCache() {
         cachedWallpapers.removeAll(keepingCapacity: true)
         cacheOrder.removeAll(keepingCapacity: true)
+        cachedPhotoAssets.removeAll(keepingCapacity: true)
     }
 
     func appearances(for request: WallpaperAppearanceRequest) async -> [WallpaperPanelAppearance] {
@@ -648,6 +655,16 @@ actor WallpaperAppearanceSampler {
         switch request.source {
         case let .solid(color):
             solidColor = color
+        case let .solidImage(candidate):
+            // The asset stands in for a color that fills the whole screen, so
+            // average the entire image instead of applying scaling geometry.
+            guard let decoded = try? await decodedWallpapers(for: candidate),
+                  let color = decoded.lazy
+                      .compactMap({ $0.uniformColor(compositedOver: request.fillColor) })
+                      .first else {
+                return []
+            }
+            solidColor = color
         case .staticImage, .phaseUnknown:
             solidColor = nil
             for candidate in request.source.candidates {
@@ -656,6 +673,12 @@ actor WallpaperAppearanceSampler {
                     images.append(contentsOf: decoded)
                 }
             }
+        case let .photoAsset(asset):
+            solidColor = nil
+            guard let decoded = await decodedPhotoAsset(identifier: asset.identifier) else {
+                return []
+            }
+            images = [decoded]
         case .unavailable:
             return []
         }
@@ -690,9 +713,29 @@ actor WallpaperAppearanceSampler {
             return WallpaperPanelAppearance(
                 identifier: region.identifier,
                 backgroundColor: backgroundColor,
-                appearance: appearance
+                appearance: appearance,
+                textColor: AdaptiveTextColor.textColor(
+                    forCandidateColors: colors,
+                    appearance: appearance
+                )
             )
         }
+    }
+
+    private func decodedPhotoAsset(identifier: String) async -> DecodedWallpaper? {
+        if let cached = cachedPhotoAssets[identifier] { return cached }
+        guard let image = await photoImageLoader?.image(forAssetIdentifier: identifier),
+              !Task.isCancelled,
+              // The loader returns a small thumbnail, so decoding inline on
+              // the actor is cheap.
+              let decoded = try? Self.decodedWallpaper(from: image, displaySize: CGSize(
+                  width: image.width,
+                  height: image.height
+              )) else {
+            return nil
+        }
+        cachedPhotoAssets[identifier] = decoded
+        return decoded
     }
 
     private func decodedWallpapers(

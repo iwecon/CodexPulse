@@ -137,6 +137,7 @@ plutil -insert CFBundleVersion -string "$VERSION" "$PLIST"
 plutil -insert LSMinimumSystemVersion -string "26.0" "$PLIST"
 plutil -insert LSUIElement -bool true "$PLIST"
 plutil -insert NSHighResolutionCapable -bool true "$PLIST"
+plutil -insert NSPhotoLibraryUsageDescription -string "Codex Pulse reads the photo used as your desktop wallpaper to pick a readable panel text color. Nothing is uploaded or stored." "$PLIST"
 plutil -insert NSPrincipalClass -string "NSApplication" "$PLIST"
 
 if [[ "$SIGNING_IDENTITY" == "-" ]]; then

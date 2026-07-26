@@ -224,6 +224,10 @@ final class DockPanelPresentationState {
     var taskActivityTextAlignment: TaskActivityTextAlignment = .auto
     var usageAppearance: PanelSemanticAppearance = .dark
     var taskAppearance: PanelSemanticAppearance = .dark
+    /// Wallpaper-derived text colors; nil falls back to the semantic
+    /// black-or-white foreground of the current appearance.
+    var usageTextColor: WallpaperRGB?
+    var taskTextColor: WallpaperRGB?
 }
 
 enum DockPanelResizeAnchor {
@@ -660,6 +664,7 @@ final class DockPanelResizeController {
     private let onToggleSide: ActionHandler
     private let onToggleVerticalOrder: ActionHandler
     private let onToggleTaskTextAlignment: ActionHandler
+    private let onManagePermissions: ActionHandler
     private let onDragBegan: DragHandler
     private let onDragChanged: DragHandler
     private let onDragEnded: DragHandler
@@ -688,6 +693,7 @@ final class DockPanelResizeController {
         onToggleSide: @escaping ActionHandler,
         onToggleVerticalOrder: @escaping ActionHandler,
         onToggleTaskTextAlignment: @escaping ActionHandler,
+        onManagePermissions: @escaping ActionHandler,
         onDragBegan: @escaping DragHandler,
         onDragChanged: @escaping DragHandler,
         onDragEnded: @escaping DragHandler
@@ -702,6 +708,7 @@ final class DockPanelResizeController {
         self.onToggleSide = onToggleSide
         self.onToggleVerticalOrder = onToggleVerticalOrder
         self.onToggleTaskTextAlignment = onToggleTaskTextAlignment
+        self.onManagePermissions = onManagePermissions
         self.onDragBegan = onDragBegan
         self.onDragChanged = onDragChanged
         self.onDragEnded = onDragEnded
@@ -780,6 +787,11 @@ final class DockPanelResizeController {
                 cancelPendingHide()
                 onToggleTaskTextAlignment(identity)
                 updateOverlays(identity)
+            },
+            onManagePermissions: { [weak self] in
+                guard let self else { return }
+                cancelPendingHide()
+                onManagePermissions(identity)
             },
             language: language(),
             onSelectLanguage: { [weak self] selectedLanguage in
@@ -1026,10 +1038,12 @@ private final class DockPanelInteractionView: NSView {
     private let actionsView = NSView()
     private let languageSurface = NSGlassEffectView()
     private let languagePickerSurface = NSGlassEffectView()
+    private let permissionSurface = NSGlassEffectView()
     private let sideSurface = NSGlassEffectView()
     private let verticalSurface = NSGlassEffectView()
     private let taskTextAlignmentSurface = NSGlassEffectView()
     private let languageButton = NSButton(image: NSImage(), target: nil, action: nil)
+    private let permissionButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let sideButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let verticalButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let taskTextAlignmentButton = NSButton(image: NSImage(), target: nil, action: nil)
@@ -1038,6 +1052,7 @@ private final class DockPanelInteractionView: NSView {
     private let onToggleSide: () -> Void
     private let onToggleVerticalOrder: () -> Void
     private let onToggleTaskTextAlignment: () -> Void
+    private let onManagePermissions: () -> Void
     private var side: PanelSide = .left
     private var resizeFocused = false
     private var isLanguagePickerVisible = false
@@ -1045,7 +1060,9 @@ private final class DockPanelInteractionView: NSView {
 
     var visibleButtonCount: Int {
         if isLanguagePickerVisible { return 1 }
-        return 2 + (verticalButton.isHidden ? 0 : 1)
+        return 2
+            + (verticalButton.isHidden ? 0 : 1)
+            + (permissionButton.isHidden ? 0 : 1)
     }
 
     init(
@@ -1058,6 +1075,7 @@ private final class DockPanelInteractionView: NSView {
         onToggleSide: @escaping () -> Void,
         onToggleVerticalOrder: @escaping () -> Void,
         onToggleTaskTextAlignment: @escaping () -> Void,
+        onManagePermissions: @escaping () -> Void,
         language: AppLanguage,
         onSelectLanguage: @escaping (AppLanguage) -> Void
     ) {
@@ -1065,6 +1083,7 @@ private final class DockPanelInteractionView: NSView {
         self.onToggleSide = onToggleSide
         self.onToggleVerticalOrder = onToggleVerticalOrder
         self.onToggleTaskTextAlignment = onToggleTaskTextAlignment
+        self.onManagePermissions = onManagePermissions
         languagePicker = DockPanelLanguagePickerView(
             language: language,
             onSelect: onSelectLanguage
@@ -1083,6 +1102,7 @@ private final class DockPanelInteractionView: NSView {
         configureContinuousCorners(backgroundGlass, radius: DockPanelOverlayGeometry.outerCornerRadius)
         actionsView.wantsLayer = true
         configure(languageSurface, button: languageButton, action: #selector(showLanguagePicker))
+        configure(permissionSurface, button: permissionButton, action: #selector(managePermissions))
         configure(sideSurface, button: sideButton, action: #selector(toggleSide))
         configure(verticalSurface, button: verticalButton, action: #selector(toggleVerticalOrder))
         configure(
@@ -1097,6 +1117,7 @@ private final class DockPanelInteractionView: NSView {
         languagePickerSurface.contentView = pickerContent
         actionsView.addSubview(languageSurface)
         actionsView.addSubview(languagePickerSurface)
+        actionsView.addSubview(permissionSurface)
         actionsView.addSubview(sideSurface)
         actionsView.addSubview(verticalSurface)
         actionsView.addSubview(taskTextAlignmentSurface)
@@ -1134,6 +1155,11 @@ private final class DockPanelInteractionView: NSView {
             languageSurface.frame = frames[index]
             languageButton.frame = languageSurface.bounds
             index += 1
+            if !permissionButton.isHidden, frames.count > index {
+                permissionSurface.frame = frames[index]
+                permissionButton.frame = permissionSurface.bounds
+                index += 1
+            }
         } else {
             taskTextAlignmentSurface.frame = frames[index]
             taskTextAlignmentButton.frame = taskTextAlignmentSurface.bounds
@@ -1168,6 +1194,17 @@ private final class DockPanelInteractionView: NSView {
         languageButton.setAccessibilityLabel(language.changeLanguage)
         languageSurface.isHidden = identity != .usageOverview || isLanguagePickerVisible
         languagePickerSurface.isHidden = identity != .usageOverview || !isLanguagePickerVisible
+        permissionButton.image = NSImage(
+            systemSymbolName: "photo.badge.checkmark",
+            accessibilityDescription: language.managePermissions
+        ) ?? NSImage(
+            systemSymbolName: "photo",
+            accessibilityDescription: language.managePermissions
+        )
+        permissionButton.toolTip = language.managePermissions
+        permissionButton.setAccessibilityLabel(language.managePermissions)
+        permissionButton.isHidden = identity != .usageOverview || isLanguagePickerVisible
+        permissionSurface.isHidden = permissionButton.isHidden
         taskTextAlignmentSurface.isHidden = taskTextAlignment == nil || isLanguagePickerVisible
         taskTextAlignmentButton.isHidden = taskTextAlignment == nil || isLanguagePickerVisible
         if let taskTextAlignment { apply(taskTextAlignment, to: taskTextAlignmentButton) }
@@ -1291,11 +1328,14 @@ private final class DockPanelInteractionView: NSView {
     @objc private func toggleSide() { onToggleSide() }
     @objc private func toggleVerticalOrder() { onToggleVerticalOrder() }
     @objc private func toggleTaskTextAlignment() { onToggleTaskTextAlignment() }
+    @objc private func managePermissions() { onManagePermissions() }
 
     @objc private func showLanguagePicker() {
         guard identity == .usageOverview else { return }
         isLanguagePickerVisible = true
         languageSurface.isHidden = true
+        permissionSurface.isHidden = true
+        permissionButton.isHidden = true
         sideSurface.isHidden = true
         verticalSurface.isHidden = true
         languagePickerSurface.isHidden = false
@@ -1307,6 +1347,8 @@ private final class DockPanelInteractionView: NSView {
         isLanguagePickerVisible = false
         languagePickerSurface.isHidden = true
         languageSurface.isHidden = identity != .usageOverview
+        permissionButton.isHidden = identity != .usageOverview
+        permissionSurface.isHidden = permissionButton.isHidden
         sideSurface.isHidden = false
         needsLayout = true
     }

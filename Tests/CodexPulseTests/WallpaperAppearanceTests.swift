@@ -118,7 +118,7 @@ private func wallpaperStoreData(
     ) == .center)
 }
 
-@Test func wallpaperAppearanceUsesRelativeLuminance() {
+@Test func wallpaperAppearanceUsesPerceptualContrast() {
     #expect(WallpaperRGB(red: 1, green: 1, blue: 1).relativeLuminance == 1)
     #expect(WallpaperRGB(red: 0, green: 0, blue: 0).relativeLuminance == 0)
     #expect(WallpaperAppearanceSelection.contrastRatio(
@@ -129,39 +129,90 @@ private func wallpaperStoreData(
         foregroundLuminance: 1,
         backgroundLuminance: 0
     ) == 21)
-    #expect(WallpaperAppearanceSelection.preferredAppearance(
-        forRelativeLuminance: 0.1
-    ) == .dark)
-    #expect(WallpaperAppearanceSelection.preferredAppearance(
-        forRelativeLuminance: 0.9
-    ) == .light)
+    let darkGray = WallpaperRGB(red: 0.2, green: 0.2, blue: 0.2)
+    let lightGray = WallpaperRGB(red: 0.9, green: 0.9, blue: 0.9)
+    #expect(WallpaperAppearanceSelection.preferredAppearance(for: darkGray) == .dark)
+    #expect(WallpaperAppearanceSelection.preferredAppearance(for: lightGray) == .light)
+    // WCAG2 would flip to black text just above relative luminance 0.18
+    // (sRGB ~0.46), but APCA keeps white text readable on mid-tone
+    // backgrounds up to about sRGB 0.63.
+    let midGray = WallpaperRGB(red: 0.5, green: 0.5, blue: 0.5)
     #expect(WallpaperAppearanceSelection.appearance(
-        forRelativeLuminance: 0.1,
+        forCandidateColors: [midGray],
         previous: nil
     ) == .dark)
-    #expect(WallpaperAppearanceSelection.appearance(
-        forRelativeLuminance: 0.9,
-        previous: nil
-    ) == .light)
 }
 
 @Test func wallpaperAppearanceHysteresisRetainsBorderlineChoice() {
+    // Near the APCA polarity crossover both choices are perceptually
+    // equivalent, so the previous appearance wins.
+    let borderline = WallpaperRGB(red: 0.65, green: 0.65, blue: 0.65)
     #expect(WallpaperAppearanceSelection.appearance(
-        forRelativeLuminance: 0.18,
+        forCandidateColors: [borderline],
         previous: .light
     ) == .light)
     #expect(WallpaperAppearanceSelection.appearance(
-        forRelativeLuminance: 0.18,
+        forCandidateColors: [borderline],
         previous: .dark
     ) == .dark)
+    // Decisive backgrounds override the previous appearance.
     #expect(WallpaperAppearanceSelection.appearance(
-        forRelativeLuminance: 0.13,
+        forCandidateColors: [WallpaperRGB(red: 0.3, green: 0.3, blue: 0.3)],
         previous: .light
     ) == .dark)
     #expect(WallpaperAppearanceSelection.appearance(
-        forRelativeLuminance: 0.24,
+        forCandidateColors: [WallpaperRGB(red: 0.9, green: 0.9, blue: 0.9)],
         previous: .dark
     ) == .light)
+}
+
+@Test func adaptiveTextColorContinuesBackgroundHueWithGuaranteedContrast() {
+    // Deep blue wallpaper: light text that carries the blue hue.
+    let deepBlue = WallpaperRGB(red: 0.08, green: 0.12, blue: 0.42)
+    let appearance = WallpaperAppearanceSelection.appearance(
+        forCandidateColors: [deepBlue],
+        previous: nil
+    )
+    #expect(appearance == .dark)
+    let text = AdaptiveTextColor.textColor(forCandidateColors: [deepBlue], appearance: .dark)
+    #expect(WallpaperAppearanceSelection.contrastRatio(
+        foregroundLuminance: text.relativeLuminance,
+        backgroundLuminance: deepBlue.relativeLuminance
+    ) >= AdaptiveTextColor.minimumContrastRatio)
+    let textLab = AdaptiveTextColor.oklab(from: text)
+    let backgroundLab = AdaptiveTextColor.oklab(from: deepBlue)
+    #expect(textLab.chroma > 0.005)
+    let hueDifference = abs(
+        atan2(
+            sin(textLab.hueRadians - backgroundLab.hueRadians),
+            cos(textLab.hueRadians - backgroundLab.hueRadians)
+        )
+    )
+    #expect(hueDifference < 0.35)
+
+    // A neutral background produces an effectively neutral text color.
+    let nearBlack = WallpaperRGB(red: 0.05, green: 0.05, blue: 0.05)
+    let neutral = AdaptiveTextColor.textColor(forCandidateColors: [nearBlack], appearance: .dark)
+    #expect(AdaptiveTextColor.oklab(from: neutral).chroma < 0.005)
+
+    // Mid-tone backgrounds cannot reach the target ratio with any tint, so
+    // the maximum-contrast pure color applies.
+    let midGray = WallpaperRGB(red: 0.5, green: 0.5, blue: 0.5)
+    let fallback = AdaptiveTextColor.textColor(forCandidateColors: [midGray], appearance: .dark)
+    #expect(fallback == WallpaperRGB(red: 1, green: 1, blue: 1))
+
+    // Multi-phase sources keep the ratio against every candidate.
+    let phases = [
+        WallpaperRGB(red: 0.06, green: 0.10, blue: 0.30),
+        WallpaperRGB(red: 0.16, green: 0.18, blue: 0.34),
+    ]
+    let phaseText = AdaptiveTextColor.textColor(forCandidateColors: phases, appearance: .dark)
+    for phase in phases {
+        #expect(WallpaperAppearanceSelection.contrastRatio(
+            foregroundLuminance: phaseText.relativeLuminance,
+            backgroundLuminance: phase.relativeLuminance
+        ) >= AdaptiveTextColor.minimumContrastRatio)
+    }
 }
 
 @MainActor
@@ -285,6 +336,40 @@ private func wallpaperSystemColorStoreData(name: String) throws -> Data {
     )
 }
 
+private func writeSolidPNG(at url: URL, color: WallpaperRGB) throws {
+    guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(
+              data: nil,
+              width: 4,
+              height: 4,
+              bitsPerComponent: 8,
+              bytesPerRow: 4 * 4,
+              space: colorSpace,
+              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+          ),
+          let fillColor = CGColor(
+              colorSpace: colorSpace,
+              components: [color.red, color.green, color.blue, color.alpha]
+          ),
+          let image = {
+              context.setFillColor(fillColor)
+              context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+              return context.makeImage()
+          }(),
+          let destination = CGImageDestinationCreateWithURL(
+              url as CFURL,
+              UTType.png.identifier as CFString,
+              1,
+              nil
+          ) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+}
+
 private func wallpaperDynamicStoreData(assetID: String) throws -> Data {
     let choiceConfiguration = try PropertyListSerialization.data(
         fromPropertyList: ["assetID": assetID],
@@ -392,7 +477,8 @@ private func wallpaperSourceStoreData(
     provider: String,
     files: [URL] = [],
     configuration: [String: Any] = [:],
-    styleID: String? = nil
+    styleID: String? = nil,
+    placementID: String? = nil
 ) throws -> Data {
     let choiceConfiguration = try PropertyListSerialization.data(
         fromPropertyList: configuration,
@@ -406,13 +492,16 @@ private func wallpaperSourceStoreData(
             "Configuration": choiceConfiguration,
         ]],
     ]
+    var optionValues: [String: Any] = [:]
     if let styleID {
+        optionValues["style"] = ["picker": ["_0": ["id": styleID]]]
+    }
+    if let placementID {
+        optionValues["placement"] = ["picker": ["_0": ["id": placementID]]]
+    }
+    if !optionValues.isEmpty {
         content["EncodedOptionValues"] = try PropertyListSerialization.data(
-            fromPropertyList: [
-                "values": [
-                    "style": ["picker": ["_0": ["id": styleID]]],
-                ],
-            ],
+            fromPropertyList: ["values": optionValues],
             format: .binary,
             options: 0
         )
@@ -433,13 +522,18 @@ private func wallpaperSourceStoreData(
 private func writeDesktopPictureDescriptor(
     at descriptorURL: URL,
     thumbnailPath: String,
-    isDynamic: Bool
+    isDynamic: Bool,
+    isSolar: Bool? = nil
 ) throws {
+    var descriptor: [String: Any] = [
+        "thumbnailPath": thumbnailPath,
+        "isDynamic": isDynamic,
+    ]
+    if let isSolar {
+        descriptor["isSolar"] = isSolar
+    }
     let data = try PropertyListSerialization.data(
-        fromPropertyList: [
-            "thumbnailPath": thumbnailPath,
-            "isDynamic": isDynamic,
-        ],
+        fromPropertyList: descriptor,
         format: .xml,
         options: 0
     )
@@ -480,6 +574,11 @@ private func writeDesktopPictureDescriptor(
 }
 
 @Test func wallpaperStoreUsesDirectDesktopFillColorForSystemColorSelection() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appending(path: "CodexPulseSystemColorFillTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
     let directColor = WallpaperRGB(
         red: 84.0 / 255,
         green: 85.0 / 255,
@@ -495,7 +594,7 @@ private func writeDesktopPictureDescriptor(
     }
 
     let stoneData = try wallpaperSystemColorStoreData(name: "stone")
-    let resolver = WallpaperSourceResolver()
+    let resolver = WallpaperSourceResolver(systemSolidColorsDirectory: temporaryDirectory)
     #expect(resolver.resolve(
         indexData: stoneData,
         displayUUID: nil,
@@ -527,6 +626,72 @@ private func writeDesktopPictureDescriptor(
     let result = try #require(appearances.first)
     #expect(result.backgroundColor == directColor)
     #expect(result.appearance == .dark)
+}
+
+@Test func wallpaperSourceResolverMatchesSystemColorPNGAndSamplesItsColor() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appending(path: "CodexPulseSystemColorImageTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let expectedColor = WallpaperRGB(
+        red: 196.0 / 255,
+        green: 140.0 / 255,
+        blue: 153.0 / 255
+    )
+    let imageURL = temporaryDirectory.appending(path: "Dusty Rose.png")
+    try writeSolidPNG(at: imageURL, color: expectedColor)
+    try Data("not an image".utf8).write(
+        to: temporaryDirectory.appending(path: "DustyRose.jpg")
+    )
+
+    let resolver = WallpaperSourceResolver(systemSolidColorsDirectory: temporaryDirectory)
+    let source = resolver.resolve(
+        indexData: try wallpaperSystemColorStoreData(name: "dustyRose"),
+        displayUUID: nil,
+        workspaceURL: nil
+    )
+    guard case let .solidImage(candidate) = source else {
+        Issue.record("Expected a solid-color image for dustyRose")
+        return
+    }
+    #expect(candidate.kind == .image)
+    #expect(
+        candidate.url.resolvingSymlinksInPath()
+            == imageURL.resolvingSymlinksInPath()
+    )
+
+    // System solid-color PNGs are tiny (128x128 in macOS). With fit scaling
+    // the projected image never reaches the bottom-corner panel regions, so
+    // the sampled color must be geometry-independent.
+    let appearances = await WallpaperAppearanceSampler().appearances(
+        for: WallpaperAppearanceRequest(
+            source: source,
+            screenSize: CGSize(width: 1_920, height: 1_080),
+            scalingMode: .fit,
+            fillColor: nil,
+            panelRegions: [
+                WallpaperPanelRegion(
+                    identifier: 0,
+                    frame: CGRect(x: 0, y: 0, width: 300, height: 56),
+                    previousAppearance: .light
+                ),
+            ]
+        )
+    )
+    let result = try #require(appearances.first)
+    #expect(abs(result.backgroundColor.red - expectedColor.red) < 0.001)
+    #expect(abs(result.backgroundColor.green - expectedColor.green) < 0.001)
+    #expect(abs(result.backgroundColor.blue - expectedColor.blue) < 0.001)
+    // Dusty rose is a mid-tone background (APCA luminance ~0.30): APCA
+    // decisively prefers light text where WCAG2 would have picked black.
+    #expect(result.appearance == .dark)
+
+    #expect(resolver.resolve(
+        indexData: try wallpaperSystemColorStoreData(name: "futureSystemColor"),
+        displayUUID: nil,
+        workspaceURL: nil
+    ) == .unavailable)
 }
 
 @Test func wallpaperStoreResolvesDynamicAssetPreviewWithoutUsingNetwork() throws {
@@ -692,6 +857,240 @@ private func writeDesktopPictureDescriptor(
         ]))
         #expect(!source.candidates.contains { $0.url == descriptorURL })
     }
+}
+
+private struct SolidColorPhotoLoader: WallpaperPhotoImageLoading {
+    let identifier: String
+    let color: WallpaperRGB
+    let size: CGSize
+
+    func image(forAssetIdentifier identifier: String) async -> CGImage? {
+        guard identifier == self.identifier,
+              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                  data: nil,
+                  width: Int(size.width),
+                  height: Int(size.height),
+                  bitsPerComponent: 8,
+                  bytesPerRow: Int(size.width) * 4,
+                  space: colorSpace,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ),
+              let fillColor = CGColor(
+                  colorSpace: colorSpace,
+                  components: [color.red, color.green, color.blue, color.alpha]
+              ) else {
+            return nil
+        }
+        context.setFillColor(fillColor)
+        context.fill(CGRect(origin: .zero, size: size))
+        return context.makeImage()
+    }
+}
+
+@Test func wallpaperSourceResolverResolvesPhotoLibraryAssetsAndSamplesThroughLoader() async throws {
+    let resolver = WallpaperSourceResolver()
+    let identifier = "EAA6BE45-EE6B-43E3-93AB-6F986372BD27"
+
+    // The Store carries only the PhotoKit asset identifier; placement maps to
+    // the sampling geometry and defaults to cropping (fill).
+    let cropSource = resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.wallpaper.extension.photos",
+            configuration: ["type": "asset", "identifier": identifier],
+            placementID: "Crop"
+        ),
+        displayUUID: nil,
+        workspaceURL: nil
+    )
+    #expect(cropSource == .photoAsset(WallpaperPhotoAsset(
+        identifier: identifier,
+        scaling: .fill
+    )))
+    #expect(cropSource.preferredScalingMode == .fill)
+
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.wallpaper.extension.photos",
+            configuration: ["type": "asset", "identifier": identifier],
+            placementID: "Fit"
+        ),
+        displayUUID: nil,
+        workspaceURL: nil
+    ) == .photoAsset(WallpaperPhotoAsset(identifier: identifier, scaling: .fit)))
+
+    // A photos selection without an asset identifier must not fall back to
+    // the stale NSWorkspace desktop URL.
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.wallpaper.extension.photos",
+            configuration: [:]
+        ),
+        displayUUID: nil,
+        workspaceURL: URL(filePath: "/System/Library/CoreServices/DefaultDesktop.heic")
+    ) == .unavailable)
+
+    // The sampler resolves pixels through the injected PhotoKit loader.
+    let photoColor = WallpaperRGB(red: 30.0 / 255, green: 42.0 / 255, blue: 66.0 / 255)
+    let sampler = WallpaperAppearanceSampler(photoImageLoader: SolidColorPhotoLoader(
+        identifier: identifier,
+        color: photoColor,
+        size: CGSize(width: 384, height: 216)
+    ))
+    let appearances = await sampler.appearances(
+        for: WallpaperAppearanceRequest(
+            source: cropSource,
+            screenSize: CGSize(width: 1_920, height: 1_080),
+            scalingMode: cropSource.preferredScalingMode ?? .fill,
+            fillColor: nil,
+            panelRegions: [
+                WallpaperPanelRegion(
+                    identifier: 0,
+                    frame: CGRect(x: 0, y: 0, width: 300, height: 56),
+                    previousAppearance: nil
+                ),
+            ]
+        )
+    )
+    let result = try #require(appearances.first)
+    #expect(abs(result.backgroundColor.red - photoColor.red) < 0.01)
+    #expect(abs(result.backgroundColor.green - photoColor.green) < 0.01)
+    #expect(abs(result.backgroundColor.blue - photoColor.blue) < 0.01)
+    #expect(result.appearance == .dark)
+
+    // Without PhotoKit access (loader yields nothing) no appearance is
+    // produced, so the caller keeps the system-appearance fallback.
+    let deniedSampler = WallpaperAppearanceSampler()
+    #expect(await deniedSampler.appearances(
+        for: WallpaperAppearanceRequest(
+            source: cropSource,
+            screenSize: CGSize(width: 1_920, height: 1_080),
+            scalingMode: .fill,
+            fillColor: nil,
+            panelRegions: [
+                WallpaperPanelRegion(
+                    identifier: 0,
+                    frame: CGRect(x: 0, y: 0, width: 300, height: 56),
+                    previousAppearance: nil
+                ),
+            ]
+        )
+    ).isEmpty)
+}
+
+@Test func wallpaperSourceResolverUsesSystemAppearanceForAppearanceDrivenDynamicWallpapers() throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appending(path: "CodexPulseAppearanceDrivenTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let resolver = WallpaperSourceResolver(
+        aerialResourcesDirectory: temporaryDirectory,
+        neptuneResourcesDirectory: temporaryDirectory,
+        sequoiaResourcesDirectory: temporaryDirectory,
+        aerialMovieDirectories: []
+    )
+
+    func dynamicSource(
+        name: String,
+        isSolar: Bool?,
+        systemAppearance: PanelSemanticAppearance?
+    ) throws -> WallpaperSource {
+        let descriptorURL = temporaryDirectory.appending(path: "\(name).madesktop")
+        try writeDesktopPictureDescriptor(
+            at: descriptorURL,
+            thumbnailPath: temporaryDirectory.appending(path: "\(name).heic").path,
+            isDynamic: true,
+            isSolar: isSolar
+        )
+        return resolver.resolve(
+            indexData: try wallpaperSourceStoreData(
+                provider: "com.apple.wallpaper.choice.dynamic",
+                configuration: [
+                    "type": "systemDesktopPicture",
+                    "url": ["relative": descriptorURL.absoluteString],
+                ]
+            ),
+            displayUUID: nil,
+            workspaceURL: nil,
+            systemAppearance: systemAppearance
+        )
+    }
+
+    // Appearance-driven (non-solar) wallpapers such as "hello" resolve to
+    // the variant of the current system appearance.
+    let baseURL = temporaryDirectory.appending(path: "hello Grey.heic")
+    let lightURL = temporaryDirectory.appending(path: "hello Grey Light.heic")
+    let darkURL = temporaryDirectory.appending(path: "hello Grey Dark.heic")
+    for url in [baseURL, lightURL, darkURL] {
+        try Data("fixture".utf8).write(to: url)
+    }
+    #expect(try dynamicSource(name: "hello Grey", isSolar: false, systemAppearance: .dark)
+        == .staticImage(WallpaperSourceCandidate(url: darkURL)))
+    #expect(try dynamicSource(name: "hello Grey", isSolar: false, systemAppearance: .light)
+        == .staticImage(WallpaperSourceCandidate(url: lightURL)))
+
+    // A missing variant falls back to the base asset instead of a stale mix.
+    let baseOnly = temporaryDirectory.appending(path: "Base Only.heic")
+    try Data("fixture".utf8).write(to: baseOnly)
+    #expect(try dynamicSource(name: "Base Only", isSolar: false, systemAppearance: .dark)
+        == .staticImage(WallpaperSourceCandidate(url: baseOnly)))
+
+    // Solar wallpapers change with the time of day; their current phase stays
+    // unknown, so every candidate keeps being evaluated together.
+    let solarBase = temporaryDirectory.appending(path: "Solar.heic")
+    let solarLight = temporaryDirectory.appending(path: "Solar Light.heic")
+    let solarDark = temporaryDirectory.appending(path: "Solar Dark.heic")
+    for url in [solarBase, solarLight, solarDark] {
+        try Data("fixture".utf8).write(to: url)
+    }
+    #expect(try dynamicSource(name: "Solar", isSolar: true, systemAppearance: .dark)
+        == .phaseUnknown([
+            WallpaperSourceCandidate(url: solarDark),
+            WallpaperSourceCandidate(url: solarLight),
+            WallpaperSourceCandidate(url: solarBase),
+        ]))
+
+    // Without an isSolar marker the phase model is unknown; stay conservative.
+    let unknownBase = temporaryDirectory.appending(path: "Unknown.heic")
+    let unknownLight = temporaryDirectory.appending(path: "Unknown Light.heic")
+    let unknownDark = temporaryDirectory.appending(path: "Unknown Dark.heic")
+    for url in [unknownBase, unknownLight, unknownDark] {
+        try Data("fixture".utf8).write(to: url)
+    }
+    #expect(try dynamicSource(name: "Unknown", isSolar: nil, systemAppearance: .dark)
+        == .phaseUnknown([
+            WallpaperSourceCandidate(url: unknownDark),
+            WallpaperSourceCandidate(url: unknownLight),
+            WallpaperSourceCandidate(url: unknownBase),
+        ]))
+
+    // Neptune's dynamic style follows the system appearance the same way.
+    let tahoeLight = temporaryDirectory.appending(path: "TahoeLight.heic")
+    let tahoeDark = temporaryDirectory.appending(path: "TahoeDark.heic")
+    try Data("fixture".utf8).write(to: tahoeLight)
+    try Data("fixture".utf8).write(to: tahoeDark)
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.NeptuneOneExtension",
+            styleID: "dynamic"
+        ),
+        displayUUID: nil,
+        workspaceURL: nil,
+        systemAppearance: .dark
+    ) == .staticImage(WallpaperSourceCandidate(url: tahoeDark)))
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.NeptuneOneExtension",
+            styleID: "dynamic"
+        ),
+        displayUUID: nil,
+        workspaceURL: nil,
+        systemAppearance: nil
+    ) == .phaseUnknown([
+        WallpaperSourceCandidate(url: tahoeDark),
+        WallpaperSourceCandidate(url: tahoeLight),
+    ]))
 }
 
 @Test func wallpaperSourceResolverHandlesDesktopPictureDescriptorStylesAndStaticAssets() throws {
