@@ -1,10 +1,27 @@
 import AppKit
+import AVFoundation
 import CoreGraphics
+import Darwin
+import Dispatch
 import ImageIO
 
 enum PanelSemanticAppearance: Sendable, Equatable {
     case light
     case dark
+
+    init(appKitAppearance: NSAppearance) {
+        self = appKitAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? .dark
+            : .light
+    }
+
+    var foregroundColor: NSColor {
+        self == .dark ? .white : .black
+    }
+
+    var shadowColor: NSColor {
+        self == .dark ? .black : .white
+    }
 }
 
 enum WallpaperScalingMode: Sendable, Equatable {
@@ -31,6 +48,14 @@ struct WallpaperRGB: Sendable, Equatable {
     let red: Double
     let green: Double
     let blue: Double
+    let alpha: Double
+
+    init(red: Double, green: Double, blue: Double, alpha: Double = 1) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
 
     var relativeLuminance: Double {
         0.2126 * Self.linear(red) + 0.7152 * Self.linear(green) + 0.0722 * Self.linear(blue)
@@ -44,6 +69,25 @@ struct WallpaperRGB: Sendable, Equatable {
     }
 }
 
+#if DEBUG
+extension WallpaperRGB {
+    var debugRGBDescription: String {
+        let redByte = Int((min(max(red, 0), 1) * 255).rounded())
+        let greenByte = Int((min(max(green, 0), 1) * 255).rounded())
+        let blueByte = Int((min(max(blue, 0), 1) * 255).rounded())
+        return String(
+            format: "rgb(%.4f,%.4f,%.4f) #%02X%02X%02X",
+            red,
+            green,
+            blue,
+            redByte,
+            greenByte,
+            blueByte
+        )
+    }
+}
+#endif
+
 struct WallpaperStateSignature: Sendable, Equatable {
     struct ImageIdentity: Sendable, Equatable {
         let url: URL
@@ -51,10 +95,28 @@ struct WallpaperStateSignature: Sendable, Equatable {
         let fileSize: Int?
     }
 
-    let image: ImageIdentity
+    let image: ImageIdentity?
+    let solidColor: WallpaperRGB?
+    let sourceIdentity: WallpaperSource.Identity?
     let imageScalingRawValue: UInt
     let allowClipping: Bool
     let fillColor: WallpaperRGB?
+
+    init(
+        image: ImageIdentity?,
+        solidColor: WallpaperRGB? = nil,
+        sourceIdentity: WallpaperSource.Identity? = nil,
+        imageScalingRawValue: UInt,
+        allowClipping: Bool,
+        fillColor: WallpaperRGB?
+    ) {
+        self.image = image
+        self.solidColor = solidColor
+        self.sourceIdentity = sourceIdentity
+        self.imageScalingRawValue = imageScalingRawValue
+        self.allowClipping = allowClipping
+        self.fillColor = fillColor
+    }
 }
 
 struct WallpaperRefreshState: Sendable, Equatable {
@@ -75,19 +137,313 @@ enum WallpaperRefreshTransition: Sendable, Equatable {
     case removed
 }
 
+enum WallpaperRefreshReason: Sendable, Equatable {
+    case stateCheck
+    case wallpaperStoreChanged
+}
+
 struct WallpaperRefreshTracker: Sendable {
     private(set) var state: WallpaperRefreshState?
 
-    mutating func transition(to newState: WallpaperRefreshState?) -> WallpaperRefreshTransition {
-        guard state != newState else { return .unchanged }
+    mutating func transition(
+        to newState: WallpaperRefreshState?,
+        reason: WallpaperRefreshReason = .stateCheck
+    ) -> WallpaperRefreshTransition {
+        if state == newState {
+            guard reason == .wallpaperStoreChanged, newState != nil else { return .unchanged }
+            return .resample(invalidateDecodedWallpaper: true)
+        }
         let previousState = state
         state = newState
         guard let newState else { return .removed }
         return .resample(
-            invalidateDecodedWallpaper: previousState.map {
+            invalidateDecodedWallpaper: reason == .wallpaperStoreChanged || previousState.map {
                 $0.signature.image != newState.signature.image
+                    || $0.signature.sourceIdentity != newState.signature.sourceIdentity
             } ?? false
         )
+    }
+}
+
+enum WallpaperStoreConfiguration {
+    static let defaultStoreDirectory = FileManager.default.homeDirectoryForCurrentUser
+        .appending(path: "Library/Application Support/com.apple.wallpaper/Store", directoryHint: .isDirectory)
+    static let defaultAerialResourcesDirectory = URL(
+        filePath: "/System/Library/ExtensionKit/Extensions/WallpaperAerialsExtension.appex/Contents/Resources",
+        directoryHint: .isDirectory
+    )
+    static let defaultNeptuneResourcesDirectory = URL(
+        filePath: "/System/Library/ExtensionKit/Extensions/NeptuneOneWallpaper.appex/Contents/Resources",
+        directoryHint: .isDirectory
+    )
+
+    static func solidColor(at indexURL: URL, displayUUID: String?) -> WallpaperRGB? {
+        guard let data = try? Data(contentsOf: indexURL, options: .mappedIfSafe) else { return nil }
+        return solidColor(in: data, displayUUID: displayUUID)
+    }
+
+    static func solidColor(in indexData: Data, displayUUID: String? = nil) -> WallpaperRGB? {
+        guard let root = try? PropertyListSerialization.propertyList(
+            from: indexData,
+            options: [],
+            format: nil
+        ) as? [String: Any] else {
+            return nil
+        }
+
+        guard let configuration = selectedConfiguration(in: root, displayUUID: displayUUID) else {
+            return nil
+        }
+        return solidColor(in: configuration)
+    }
+
+    static func previewImageURL(
+        at indexURL: URL,
+        displayUUID: String?,
+        resourcesDirectory: URL = defaultAerialResourcesDirectory,
+        neptuneResourcesDirectory: URL = defaultNeptuneResourcesDirectory,
+        systemAppearance: PanelSemanticAppearance = .light
+    ) -> URL? {
+        guard let data = try? Data(contentsOf: indexURL, options: .mappedIfSafe) else { return nil }
+        return previewImageURL(
+            in: data,
+            displayUUID: displayUUID,
+            resourcesDirectory: resourcesDirectory,
+            neptuneResourcesDirectory: neptuneResourcesDirectory,
+            systemAppearance: systemAppearance
+        )
+    }
+
+    static func previewImageURL(
+        in indexData: Data,
+        displayUUID: String? = nil,
+        resourcesDirectory: URL = defaultAerialResourcesDirectory,
+        neptuneResourcesDirectory: URL = defaultNeptuneResourcesDirectory,
+        systemAppearance: PanelSemanticAppearance = .light
+    ) -> URL? {
+        guard let root = try? PropertyListSerialization.propertyList(
+            from: indexData,
+            options: [],
+            format: nil
+        ) as? [String: Any],
+              let configuration = selectedConfiguration(in: root, displayUUID: displayUUID) else {
+            return nil
+        }
+        let url: URL
+        if let assetID = assetID(in: configuration) {
+            url = resourcesDirectory.appending(path: "\(assetID).png")
+        } else if let variant = neptuneVariant(
+            in: configuration,
+            systemAppearance: systemAppearance
+        ) {
+            let filename = variant == .dark ? "TahoeDark.heic" : "TahoeLight.heic"
+            url = neptuneResourcesDirectory.appending(path: filename)
+        } else {
+            return nil
+        }
+        return FileManager.default.isReadableFile(atPath: url.path) ? url : nil
+    }
+
+    private static func selectedConfiguration(
+        in root: [String: Any],
+        displayUUID: String?
+    ) -> [String: Any]? {
+        if let displayUUID,
+           let displays = root["Displays"] as? [String: Any],
+           let display = displays[displayUUID] as? [String: Any] {
+            return display
+        }
+        for key in ["AllSpacesAndDisplays", "SystemDefault"] {
+            if let configuration = root[key] as? [String: Any] {
+                return configuration
+            }
+        }
+        return nil
+    }
+
+    private static func assetID(in configuration: [String: Any]) -> String? {
+        guard let desktop = configuration["Desktop"] as? [String: Any],
+              let content = desktop["Content"] as? [String: Any],
+              let choices = content["Choices"] as? [[String: Any]] else {
+            return nil
+        }
+        for choice in choices {
+            guard let data = choice["Configuration"] as? Data,
+                  let decoded = try? PropertyListSerialization.propertyList(
+                      from: data,
+                      options: [],
+                      format: nil
+                  ) as? [String: Any],
+                  let assetID = decoded["assetID"] as? String else {
+                continue
+            }
+            return assetID
+        }
+        return nil
+    }
+
+    private static func neptuneVariant(
+        in configuration: [String: Any],
+        systemAppearance: PanelSemanticAppearance
+    ) -> PanelSemanticAppearance? {
+        guard let desktop = configuration["Desktop"] as? [String: Any],
+              let content = desktop["Content"] as? [String: Any],
+              let choices = content["Choices"] as? [[String: Any]],
+              choices.contains(where: {
+                ($0["Provider"] as? String) == "com.apple.NeptuneOneExtension"
+              }),
+              let encodedOptions = content["EncodedOptionValues"] as? Data,
+              let options = try? PropertyListSerialization.propertyList(
+                from: encodedOptions,
+                options: [],
+                format: nil
+              ) as? [String: Any],
+              let styleID = neptuneStyleID(in: options)?.lowercased() else {
+            return nil
+        }
+        if styleID.contains("dark") { return .dark }
+        if styleID.contains("light") { return .light }
+        return styleID == "dynamic" ? systemAppearance : nil
+    }
+
+    private static func neptuneStyleID(in options: [String: Any]) -> String? {
+        if let flattened = options["style.picker._0.id"] as? String {
+            return flattened
+        }
+        guard let values = options["values"] as? [String: Any],
+              let style = values["style"] as? [String: Any],
+              let picker = style["picker"] as? [String: Any],
+              let zero = picker["_0"] as? [String: Any] else {
+            return nil
+        }
+        return zero["id"] as? String
+    }
+
+    private static func solidColor(in configuration: [String: Any]) -> WallpaperRGB? {
+        guard let desktop = configuration["Desktop"] as? [String: Any],
+              let content = desktop["Content"] as? [String: Any],
+              let choices = content["Choices"] as? [[String: Any]] else {
+            return nil
+        }
+        if let systemColor = choices.lazy.compactMap(systemColor(in:)).first {
+            return systemColor
+        }
+        guard choices.contains(where: {
+            ($0["Provider"] as? String) == "com.apple.wallpaper.choice.color"
+        }),
+              let encodedOptions = content["EncodedOptionValues"] as? Data,
+              let options = try? PropertyListSerialization.propertyList(
+                  from: encodedOptions,
+                  options: [],
+                  format: nil
+              ) as? [String: Any],
+              let values = options["values"] as? [String: Any],
+              let customColor = values["customColor"] as? [String: Any],
+              let colorContainer = customColor["color"] as? [String: Any],
+              let zero = colorContainer["_0"] as? [String: Any],
+              let color = zero["color"] as? [String: Any],
+              let components = color["components"] as? [NSNumber],
+              components.count >= 3 else {
+            return nil
+        }
+        return WallpaperRGB(
+            red: bounded(components[0].doubleValue),
+            green: bounded(components[1].doubleValue),
+            blue: bounded(components[2].doubleValue),
+            alpha: components.count > 3 ? bounded(components[3].doubleValue) : 1
+        )
+    }
+
+    private static func systemColor(in choice: [String: Any]) -> WallpaperRGB? {
+        guard let data = choice["Configuration"] as? Data,
+              let configuration = try? PropertyListSerialization.propertyList(
+                  from: data,
+                  options: [],
+                  format: nil
+              ) as? [String: Any],
+              configuration["type"] as? String == "systemColor",
+              let systemColors = configuration["systemColor"] as? [String: Any],
+              let name = systemColors.keys.first,
+              let color = namedSystemColor(name)?.usingColorSpace(.sRGB) else {
+            return nil
+        }
+        return WallpaperRGB(
+            red: bounded(color.redComponent),
+            green: bounded(color.greenComponent),
+            blue: bounded(color.blueComponent),
+            alpha: bounded(color.alphaComponent)
+        )
+    }
+
+    private static func namedSystemColor(_ name: String) -> NSColor? {
+        switch name.lowercased() {
+        case "black": .black
+        case "white": .white
+        case "gray", "grey": .gray
+        case "darkgray", "darkgrey": .darkGray
+        case "lightgray", "lightgrey": .lightGray
+        case "red": .systemRed
+        case "orange": .systemOrange
+        case "yellow": .systemYellow
+        case "green": .systemGreen
+        case "mint": .systemMint
+        case "teal": .systemTeal
+        case "cyan": .systemCyan
+        case "blue": .systemBlue
+        case "indigo": .systemIndigo
+        case "purple": .systemPurple
+        case "pink": .systemPink
+        case "brown": .systemBrown
+        default: nil
+        }
+    }
+
+    private static func bounded(_ component: Double) -> Double {
+        min(max(component, 0), 1)
+    }
+}
+
+@MainActor
+final class WallpaperStoreMonitor {
+    private let source: DispatchSourceFileSystemObject
+    private let onChange: @MainActor @Sendable () -> Void
+    private var debounceTask: Task<Void, Never>?
+
+    init?(directoryURL: URL, onChange: @escaping @MainActor @Sendable () -> Void) {
+        let fileDescriptor = open(directoryURL.path, O_EVTONLY)
+        guard fileDescriptor >= 0 else { return nil }
+
+        self.onChange = onChange
+        source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fileDescriptor,
+            eventMask: [.write, .delete, .rename, .extend, .attrib, .link, .revoke],
+            queue: .main
+        )
+        source.setCancelHandler {
+            close(fileDescriptor)
+        }
+        source.setEventHandler { [weak self] in
+            self?.scheduleDebouncedChange()
+        }
+        source.resume()
+    }
+
+    deinit {
+        debounceTask?.cancel()
+        source.cancel()
+    }
+
+    private func scheduleDebouncedChange() {
+        debounceTask?.cancel()
+        debounceTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(300))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self else { return }
+            onChange()
+        }
     }
 }
 
@@ -145,9 +501,23 @@ enum WallpaperSamplingGeometry {
 }
 
 enum WallpaperAppearanceSelection {
-    static let initialThreshold = 0.18
     static let switchToDarkThreshold = 0.14
     static let switchToLightThreshold = 0.23
+
+    static func contrastRatio(
+        foregroundLuminance: Double,
+        backgroundLuminance: Double
+    ) -> Double {
+        let lighter = max(foregroundLuminance, backgroundLuminance)
+        let darker = min(foregroundLuminance, backgroundLuminance)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    static func preferredAppearance(forRelativeLuminance luminance: Double) -> PanelSemanticAppearance {
+        let blackContrast = contrastRatio(foregroundLuminance: 0, backgroundLuminance: luminance)
+        let whiteContrast = contrastRatio(foregroundLuminance: 1, backgroundLuminance: luminance)
+        return blackContrast >= whiteContrast ? .light : .dark
+    }
 
     static func appearance(
         forRelativeLuminance luminance: Double,
@@ -159,18 +529,32 @@ enum WallpaperAppearanceSelection {
         case .light:
             luminance <= switchToDarkThreshold ? .dark : .light
         case nil:
-            luminance < initialThreshold ? .dark : .light
+            preferredAppearance(forRelativeLuminance: luminance)
         }
     }
 
-    static func representativeLuminance(_ samples: [Double]) -> Double? {
-        guard !samples.isEmpty else { return nil }
-        let sorted = samples.sorted()
-        let middle = sorted.count / 2
-        if sorted.count.isMultiple(of: 2) {
-            return (sorted[middle - 1] + sorted[middle]) / 2
+    static func appearance(
+        forCandidateColors colors: [WallpaperRGB],
+        previous: PanelSemanticAppearance?
+    ) -> PanelSemanticAppearance? {
+        guard !colors.isEmpty else { return nil }
+        guard colors.count > 1 else {
+            return appearance(
+                forRelativeLuminance: colors[0].relativeLuminance,
+                previous: previous
+            )
         }
-        return sorted[middle]
+        let luminances = colors.map(\.relativeLuminance)
+        let blackMinimum = luminances.map {
+            contrastRatio(foregroundLuminance: 0, backgroundLuminance: $0)
+        }.min() ?? 0
+        let whiteMinimum = luminances.map {
+            contrastRatio(foregroundLuminance: 1, backgroundLuminance: $0)
+        }.min() ?? 0
+        if abs(blackMinimum - whiteMinimum) <= 0.15, let previous {
+            return previous
+        }
+        return blackMinimum >= whiteMinimum ? .light : .dark
     }
 }
 
@@ -181,26 +565,56 @@ struct WallpaperPanelRegion: Sendable {
 }
 
 struct WallpaperAppearanceRequest: Sendable {
-    let url: URL
+    let source: WallpaperSource
     let screenSize: CGSize
     let scalingMode: WallpaperScalingMode
     let fillColor: WallpaperRGB?
     let panelRegions: [WallpaperPanelRegion]
+
+    init(
+        source: WallpaperSource,
+        screenSize: CGSize,
+        scalingMode: WallpaperScalingMode,
+        fillColor: WallpaperRGB?,
+        panelRegions: [WallpaperPanelRegion]
+    ) {
+        self.source = source
+        self.screenSize = screenSize
+        self.scalingMode = scalingMode
+        self.fillColor = fillColor
+        self.panelRegions = panelRegions
+    }
+
+    init(
+        url: URL?,
+        solidColor: WallpaperRGB? = nil,
+        screenSize: CGSize,
+        scalingMode: WallpaperScalingMode,
+        fillColor: WallpaperRGB?,
+        panelRegions: [WallpaperPanelRegion]
+    ) {
+        if let solidColor {
+            source = .solid(solidColor)
+        } else if let url {
+            source = .staticImage(WallpaperSourceCandidate(url: url))
+        } else {
+            source = .unavailable
+        }
+        self.screenSize = screenSize
+        self.scalingMode = scalingMode
+        self.fillColor = fillColor
+        self.panelRegions = panelRegions
+    }
 }
 
-struct WallpaperPanelAppearance: Sendable {
+struct WallpaperPanelAppearance: Sendable, Equatable {
     let identifier: Int
+    let backgroundColor: WallpaperRGB
     let appearance: PanelSemanticAppearance
 }
 
 actor WallpaperAppearanceSampler {
-    private struct CacheKey: Equatable {
-        let url: URL
-        let modificationDate: Date?
-        let fileSize: Int?
-    }
-
-    private struct DecodedWallpaper {
+    private struct DecodedWallpaper: Sendable {
         let width: Int
         let height: Int
         let bytesPerRow: Int
@@ -230,61 +644,154 @@ actor WallpaperAppearanceSampler {
         }
     }
 
-    private var cachedWallpaper: (key: CacheKey, image: DecodedWallpaper)?
+    private static let maximumCachedAssets = 6
+    private var cachedWallpapers: [WallpaperSourceCandidate: [DecodedWallpaper]] = [:]
+    private var cacheOrder: [WallpaperSourceCandidate] = []
 
     func invalidateCache() {
-        cachedWallpaper = nil
+        cachedWallpapers.removeAll(keepingCapacity: true)
+        cacheOrder.removeAll(keepingCapacity: true)
     }
 
-    func appearances(for request: WallpaperAppearanceRequest) -> [WallpaperPanelAppearance] {
+    func appearances(for request: WallpaperAppearanceRequest) async -> [WallpaperPanelAppearance] {
         guard !Task.isCancelled else { return [] }
-        let image: DecodedWallpaper
-        do {
-            image = try decodedWallpaper(at: request.url)
-        } catch {
+        let solidColor: WallpaperRGB?
+        var images: [DecodedWallpaper] = []
+        switch request.source {
+        case let .solid(color):
+            solidColor = color
+        case .staticImage, .phaseUnknown:
+            solidColor = nil
+            for candidate in request.source.candidates {
+                guard !Task.isCancelled else { return [] }
+                if let decoded = try? await decodedWallpapers(for: candidate) {
+                    images.append(contentsOf: decoded)
+                }
+            }
+        case .unavailable:
             return []
         }
-        guard !Task.isCancelled else { return [] }
+        guard !Task.isCancelled, !images.isEmpty || solidColor != nil else { return [] }
 
         return request.panelRegions.compactMap { region in
-            guard !Task.isCancelled,
-                  let luminance = representativeLuminance(
+            guard !Task.isCancelled else { return nil }
+            let colors: [WallpaperRGB]
+            if let solidColor {
+                colors = [solidColor]
+            } else {
+                colors = images.compactMap { image in
+                    averageColor(
                     in: region.frame,
                     image: image,
                     request: request
-                  ) else {
+                )
+                }
+            }
+            guard let appearance = WallpaperAppearanceSelection.appearance(
+                forCandidateColors: colors,
+                previous: region.previousAppearance
+            ), !colors.isEmpty else {
                 return nil
             }
+            let count = Double(colors.count)
+            let backgroundColor = WallpaperRGB(
+                red: colors.reduce(0) { $0 + $1.red } / count,
+                green: colors.reduce(0) { $0 + $1.green } / count,
+                blue: colors.reduce(0) { $0 + $1.blue } / count
+            )
             return WallpaperPanelAppearance(
                 identifier: region.identifier,
-                appearance: WallpaperAppearanceSelection.appearance(
-                    forRelativeLuminance: luminance,
-                    previous: region.previousAppearance
-                )
+                backgroundColor: backgroundColor,
+                appearance: appearance
             )
         }
     }
 
-    private func decodedWallpaper(at url: URL) throws -> DecodedWallpaper {
-        let values = try url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-        let key = CacheKey(url: url, modificationDate: values.contentModificationDate, fileSize: values.fileSize)
-        if let cachedWallpaper, cachedWallpaper.key == key {
-            return cachedWallpaper.image
+    private func decodedWallpapers(
+        for candidate: WallpaperSourceCandidate
+    ) async throws -> [DecodedWallpaper] {
+        if let cached = cachedWallpapers[candidate] {
+            touch(candidate)
+            return cached
         }
+        let decoded = try await Self.decode(candidate)
+        guard !Task.isCancelled else { throw CancellationError() }
+        cachedWallpapers[candidate] = decoded
+        touch(candidate)
+        while cacheOrder.count > Self.maximumCachedAssets {
+            cachedWallpapers.removeValue(forKey: cacheOrder.removeFirst())
+        }
+        return decoded
+    }
 
+    private func touch(_ candidate: WallpaperSourceCandidate) {
+        cacheOrder.removeAll { $0 == candidate }
+        cacheOrder.append(candidate)
+    }
+
+    private nonisolated static func decode(
+        _ candidate: WallpaperSourceCandidate
+    ) async throws -> [DecodedWallpaper] {
+        switch candidate.kind {
+        case .image:
+            return [try await Task.detached {
+                try decodeImage(at: candidate.url)
+            }.value]
+        case .video:
+            let asset = AVURLAsset(url: candidate.url)
+            let duration = try await asset.load(.duration)
+            let seconds = max(CMTimeGetSeconds(duration), 0)
+            let fractions = seconds > 0 ? [0.1, 0.3, 0.6, 0.9] : [0]
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 384, height: 384)
+            var decoded: [DecodedWallpaper] = []
+            decoded.reserveCapacity(fractions.count)
+            for fraction in fractions.prefix(5) {
+                guard !Task.isCancelled else { throw CancellationError() }
+                let time = CMTime(seconds: seconds * fraction, preferredTimescale: 600)
+                let image = try await generator.image(at: time).image
+                decoded.append(try await Task.detached {
+                    try decodedWallpaper(from: image, displaySize: CGSize(
+                        width: image.width,
+                        height: image.height
+                    ))
+                }.value)
+            }
+            return decoded
+        }
+    }
+
+    private nonisolated static func decodeImage(at url: URL) throws -> DecodedWallpaper {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let sourceWidth = properties[kCGImagePropertyPixelWidth] as? NSNumber,
               let sourceHeight = properties[kCGImagePropertyPixelHeight] as? NSNumber,
-              let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 1_024,
+                kCGImageSourceThumbnailMaxPixelSize: 384,
                 kCGImageSourceShouldCache: true,
                 kCGImageSourceShouldCacheImmediately: true
               ] as CFDictionary) else {
             throw CocoaError(.fileReadCorruptFile)
         }
+        let sourceMaximumDimension = max(sourceWidth.doubleValue, sourceHeight.doubleValue)
+        let decodedMaximumDimension = max(Double(thumbnail.width), Double(thumbnail.height))
+        let displayScale = sourceMaximumDimension / decodedMaximumDimension
+        return try decodedWallpaper(
+            from: thumbnail,
+            displaySize: CGSize(
+                width: Double(thumbnail.width) * displayScale,
+                height: Double(thumbnail.height) * displayScale
+            )
+        )
+    }
+
+    private nonisolated static func decodedWallpaper(
+        from cgImage: CGImage,
+        displaySize: CGSize
+    ) throws -> DecodedWallpaper {
         let width = cgImage.width
         let height = cgImage.height
         let bytesPerRow = width * 4
@@ -307,60 +814,98 @@ actor WallpaperAppearanceSampler {
         }
         guard rendered else { throw CocoaError(.fileReadCorruptFile) }
 
-        let sourceMaximumDimension = max(sourceWidth.doubleValue, sourceHeight.doubleValue)
-        let decodedMaximumDimension = max(Double(width), Double(height))
-        let displayScale = sourceMaximumDimension / decodedMaximumDimension
         let decoded = DecodedWallpaper(
             width: width,
             height: height,
             bytesPerRow: bytesPerRow,
             pixels: pixels,
-            displaySize: CGSize(
-                width: Double(width) * displayScale,
-                height: Double(height) * displayScale
-            )
+            displaySize: displaySize
         )
-        cachedWallpaper = (key, decoded)
         return decoded
     }
 
-    private func representativeLuminance(
+    /// Reduces the wallpaper covered by a panel to one area-weighted sRGB color.
+    ///
+    /// Decoded pixels are treated as rectangular color blocks in screen space, so this is
+    /// equivalent to resampling the covered desktop region to a single pixel without relying
+    /// on a sparse sampling grid.
+    private func averageColor(
         in panelFrame: CGRect,
         image: DecodedWallpaper,
         request: WallpaperAppearanceRequest
-    ) -> Double? {
+    ) -> WallpaperRGB? {
         let screenBounds = CGRect(origin: .zero, size: request.screenSize)
         let frame = panelFrame.intersection(screenBounds)
         guard !frame.isNull, frame.width > 0, frame.height > 0 else { return nil }
 
-        let columns = 9
-        let rows = 7
-        var samples: [Double] = []
-        samples.reserveCapacity(columns * rows)
-        for row in 0..<rows {
-            for column in 0..<columns {
-                let point = CGPoint(
-                    x: frame.minX + (CGFloat(column) + 0.5) * frame.width / CGFloat(columns),
-                    y: frame.minY + (CGFloat(row) + 0.5) * frame.height / CGFloat(rows)
+        let panelArea = Double(frame.width * frame.height)
+        var sampledArea = request.fillColor == nil ? 0 : panelArea
+        var red = (request.fillColor?.red ?? 0) * panelArea
+        var green = (request.fillColor?.green ?? 0) * panelArea
+        var blue = (request.fillColor?.blue ?? 0) * panelArea
+
+        guard let imageRect = WallpaperSamplingGeometry.imageRect(
+            imageSize: image.displaySize,
+            screenSize: request.screenSize,
+            mode: request.scalingMode
+        ) else {
+            return request.fillColor
+        }
+        let coveredFrame = frame.intersection(imageRect)
+        guard !coveredFrame.isNull, coveredFrame.width > 0, coveredFrame.height > 0 else {
+            return request.fillColor
+        }
+
+        let pixelWidth = imageRect.width / CGFloat(image.width)
+        let pixelHeight = imageRect.height / CGFloat(image.height)
+        let firstColumn = max(Int(floor((coveredFrame.minX - imageRect.minX) / pixelWidth)), 0)
+        let lastColumn = min(Int(ceil((coveredFrame.maxX - imageRect.minX) / pixelWidth)), image.width)
+        let firstRow = max(Int(floor((imageRect.maxY - coveredFrame.maxY) / pixelHeight)), 0)
+        let lastRow = min(Int(ceil((imageRect.maxY - coveredFrame.minY) / pixelHeight)), image.height)
+
+        for row in firstRow..<lastRow {
+            guard !Task.isCancelled else { return nil }
+            let pixelMaxY = imageRect.maxY - CGFloat(row) * pixelHeight
+            let pixelMinY = pixelMaxY - pixelHeight
+            let overlapHeight = max(
+                min(pixelMaxY, coveredFrame.maxY) - max(pixelMinY, coveredFrame.minY),
+                0
+            )
+            guard overlapHeight > 0 else { continue }
+
+            for column in firstColumn..<lastColumn {
+                let pixelMinX = imageRect.minX + CGFloat(column) * pixelWidth
+                let pixelMaxX = pixelMinX + pixelWidth
+                let overlapWidth = max(
+                    min(pixelMaxX, coveredFrame.maxX) - max(pixelMinX, coveredFrame.minX),
+                    0
                 )
-                let color: WallpaperRGB?
-                if let pixel = WallpaperSamplingGeometry.imagePixel(
-                    forScreenPoint: point,
-                    imageSize: image.displaySize,
-                    screenSize: request.screenSize,
-                    mode: request.scalingMode
-                ) {
-                    let decodedPixel = CGPoint(
-                        x: pixel.x * image.size.width / image.displaySize.width,
-                        y: pixel.y * image.size.height / image.displaySize.height
-                    )
-                    color = image.color(at: decodedPixel, compositedOver: request.fillColor)
-                } else {
-                    color = request.fillColor
+                let area = Double(overlapWidth * overlapHeight)
+                guard area > 0,
+                      let color = image.color(
+                        at: CGPoint(x: column, y: row),
+                        compositedOver: request.fillColor
+                      ) else {
+                    continue
                 }
-                if let color { samples.append(color.relativeLuminance) }
+
+                if let fill = request.fillColor {
+                    red += (color.red - fill.red) * area
+                    green += (color.green - fill.green) * area
+                    blue += (color.blue - fill.blue) * area
+                } else {
+                    sampledArea += area
+                    red += color.red * area
+                    green += color.green * area
+                    blue += color.blue * area
+                }
             }
         }
-        return WallpaperAppearanceSelection.representativeLuminance(samples)
+        guard sampledArea > 0 else { return nil }
+        return WallpaperRGB(
+            red: red / sampledArea,
+            green: green / sampledArea,
+            blue: blue / sampledArea
+        )
     }
 }

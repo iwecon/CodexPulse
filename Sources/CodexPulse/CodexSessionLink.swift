@@ -145,15 +145,16 @@ private final class CodexSessionLinkView: NSView {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         paragraph.alignment = textAlignment == .left ? .left : .right
+        let semanticAppearance = PanelSemanticAppearance(appKitAppearance: effectiveAppearance)
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.62)
+        shadow.shadowColor = semanticAppearance.shadowColor.withAlphaComponent(0.62)
         shadow.shadowBlurRadius = 0.45
         shadow.shadowOffset = .zero
         (title as NSString).draw(
             in: bounds.insetBy(dx: 0, dy: 1),
             withAttributes: [
                 .font: NSFont.systemFont(ofSize: 8, weight: .semibold),
-                .foregroundColor: NSColor.white,
+                .foregroundColor: semanticAppearance.foregroundColor,
                 .paragraphStyle: paragraph,
                 .shadow: shadow,
             ]
