@@ -177,12 +177,24 @@ enum WallpaperStoreConfiguration {
         directoryHint: .isDirectory
     )
 
-    static func solidColor(at indexURL: URL, displayUUID: String?) -> WallpaperRGB? {
+    static func solidColor(
+        at indexURL: URL,
+        displayUUID: String?,
+        desktopFillColor: WallpaperRGB? = nil
+    ) -> WallpaperRGB? {
         guard let data = try? Data(contentsOf: indexURL, options: .mappedIfSafe) else { return nil }
-        return solidColor(in: data, displayUUID: displayUUID)
+        return solidColor(
+            in: data,
+            displayUUID: displayUUID,
+            desktopFillColor: desktopFillColor
+        )
     }
 
-    static func solidColor(in indexData: Data, displayUUID: String? = nil) -> WallpaperRGB? {
+    static func solidColor(
+        in indexData: Data,
+        displayUUID: String? = nil,
+        desktopFillColor: WallpaperRGB? = nil
+    ) -> WallpaperRGB? {
         guard let root = try? PropertyListSerialization.propertyList(
             from: indexData,
             options: [],
@@ -194,7 +206,7 @@ enum WallpaperStoreConfiguration {
         guard let configuration = selectedConfiguration(in: root, displayUUID: displayUUID) else {
             return nil
         }
-        return solidColor(in: configuration)
+        return solidColor(in: configuration, desktopFillColor: desktopFillColor)
     }
 
     static func previewImageURL(
@@ -319,23 +331,31 @@ enum WallpaperStoreConfiguration {
         return zero["id"] as? String
     }
 
-    private static func solidColor(in configuration: [String: Any]) -> WallpaperRGB? {
+    private static func solidColor(
+        in configuration: [String: Any],
+        desktopFillColor: WallpaperRGB?
+    ) -> WallpaperRGB? {
         guard let desktop = configuration["Desktop"] as? [String: Any],
               let content = desktop["Content"] as? [String: Any],
               let choices = content["Choices"] as? [[String: Any]] else {
             return nil
         }
-        if let systemColor = choices.lazy.compactMap(systemColor(in:)).first {
-            return systemColor
+        if choices.contains(where: isSystemColorSelection) {
+            return desktopFillColor
         }
         guard choices.contains(where: {
             ($0["Provider"] as? String) == "com.apple.wallpaper.choice.color"
-        }),
-              let encodedOptions = content["EncodedOptionValues"] as? Data,
+        }) else {
+            return nil
+        }
+        if let desktopFillColor {
+            return desktopFillColor
+        }
+        guard let encodedOptions = content["EncodedOptionValues"] as? Data,
               let options = try? PropertyListSerialization.propertyList(
-                  from: encodedOptions,
-                  options: [],
-                  format: nil
+                from: encodedOptions,
+                options: [],
+                format: nil
               ) as? [String: Any],
               let values = options["values"] as? [String: Any],
               let customColor = values["customColor"] as? [String: Any],
@@ -354,48 +374,16 @@ enum WallpaperStoreConfiguration {
         )
     }
 
-    private static func systemColor(in choice: [String: Any]) -> WallpaperRGB? {
+    private static func isSystemColorSelection(_ choice: [String: Any]) -> Bool {
         guard let data = choice["Configuration"] as? Data,
               let configuration = try? PropertyListSerialization.propertyList(
                   from: data,
                   options: [],
                   format: nil
-              ) as? [String: Any],
-              configuration["type"] as? String == "systemColor",
-              let systemColors = configuration["systemColor"] as? [String: Any],
-              let name = systemColors.keys.first,
-              let color = namedSystemColor(name)?.usingColorSpace(.sRGB) else {
-            return nil
+              ) as? [String: Any] else {
+            return false
         }
-        return WallpaperRGB(
-            red: bounded(color.redComponent),
-            green: bounded(color.greenComponent),
-            blue: bounded(color.blueComponent),
-            alpha: bounded(color.alphaComponent)
-        )
-    }
-
-    private static func namedSystemColor(_ name: String) -> NSColor? {
-        switch name.lowercased() {
-        case "black": .black
-        case "white": .white
-        case "gray", "grey": .gray
-        case "darkgray", "darkgrey": .darkGray
-        case "lightgray", "lightgrey": .lightGray
-        case "red": .systemRed
-        case "orange": .systemOrange
-        case "yellow": .systemYellow
-        case "green": .systemGreen
-        case "mint": .systemMint
-        case "teal": .systemTeal
-        case "cyan": .systemCyan
-        case "blue": .systemBlue
-        case "indigo": .systemIndigo
-        case "purple": .systemPurple
-        case "pink": .systemPink
-        case "brown": .systemBrown
-        default: nil
-        }
+        return (configuration["type"] as? String)?.lowercased() == "systemcolor"
     }
 
     private static func bounded(_ component: Double) -> Double {

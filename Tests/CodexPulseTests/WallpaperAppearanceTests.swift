@@ -164,6 +164,22 @@ private func wallpaperStoreData(
     ) == .light)
 }
 
+@MainActor
+@Test func codexSessionLinkViewUpdatesItsExplicitAdaptiveForeground() {
+    let view = CodexSessionLinkView(
+        threadID: "thread-1",
+        title: "# latest user message",
+        language: .simplifiedChineseMainland,
+        textAlignment: .left,
+        semanticAppearance: .light
+    )
+    #expect(view.renderedForegroundColor == .black)
+
+    view.setAppearance(.dark)
+
+    #expect(view.renderedForegroundColor == .white)
+}
+
 @Test func wallpaperRefreshTrackerDetectsSignatureGeometryAndRemovalChanges() {
     let url = URL(fileURLWithPath: "/tmp/wallpaper.png")
     let date = Date(timeIntervalSince1970: 100)
@@ -331,13 +347,24 @@ private func wallpaperNeptuneStoreData(styleID: String) throws -> Data {
     )
 }
 
-private func wallpaperSourceStoreData(
-    provider: String,
-    files: [URL] = [],
-    configuration: [String: Any] = [:]
-) throws -> Data {
+private func wallpaperSequoiaStoreData(styleID: String) throws -> Data {
     let choiceConfiguration = try PropertyListSerialization.data(
-        fromPropertyList: configuration,
+        fromPropertyList: [:],
+        format: .binary,
+        options: 0
+    )
+    let encodedOptions = try PropertyListSerialization.data(
+        fromPropertyList: [
+            "values": [
+                "appearance": ["picker": ["_0": ["id": "system"]]],
+                "appearanceMode": ["picker": ["_0": ["id": "automatic"]]],
+                "style": [
+                    "picker": [
+                        "_0": ["id": styleID],
+                    ],
+                ],
+            ],
+        ],
         format: .binary,
         options: 0
     )
@@ -347,10 +374,11 @@ private func wallpaperSourceStoreData(
                 "Desktop": [
                     "Content": [
                         "Choices": [[
-                            "Provider": provider,
-                            "Files": files.map(\.absoluteString),
+                            "Provider": "com.apple.wallpaper.choice.sequoia",
+                            "Files": [],
                             "Configuration": choiceConfiguration,
                         ]],
+                        "EncodedOptionValues": encodedOptions,
                     ],
                 ],
             ],
@@ -358,6 +386,64 @@ private func wallpaperSourceStoreData(
         format: .binary,
         options: 0
     )
+}
+
+private func wallpaperSourceStoreData(
+    provider: String,
+    files: [URL] = [],
+    configuration: [String: Any] = [:],
+    styleID: String? = nil
+) throws -> Data {
+    let choiceConfiguration = try PropertyListSerialization.data(
+        fromPropertyList: configuration,
+        format: .binary,
+        options: 0
+    )
+    var content: [String: Any] = [
+        "Choices": [[
+            "Provider": provider,
+            "Files": files.map(\.absoluteString),
+            "Configuration": choiceConfiguration,
+        ]],
+    ]
+    if let styleID {
+        content["EncodedOptionValues"] = try PropertyListSerialization.data(
+            fromPropertyList: [
+                "values": [
+                    "style": ["picker": ["_0": ["id": styleID]]],
+                ],
+            ],
+            format: .binary,
+            options: 0
+        )
+    }
+    return try PropertyListSerialization.data(
+        fromPropertyList: [
+            "AllSpacesAndDisplays": [
+                "Desktop": [
+                    "Content": content,
+                ],
+            ],
+        ],
+        format: .binary,
+        options: 0
+    )
+}
+
+private func writeDesktopPictureDescriptor(
+    at descriptorURL: URL,
+    thumbnailPath: String,
+    isDynamic: Bool
+) throws {
+    let data = try PropertyListSerialization.data(
+        fromPropertyList: [
+            "thumbnailPath": thumbnailPath,
+            "isDynamic": isDynamic,
+        ],
+        format: .xml,
+        options: 0
+    )
+    try data.write(to: descriptorURL)
 }
 
 @Test func wallpaperStoreParsesAllDisplaysAndSystemDefaultSolidColors() throws {
@@ -393,22 +479,54 @@ private func wallpaperSourceStoreData(
     #expect(WallpaperStoreConfiguration.solidColor(in: data) == nil)
 }
 
-@Test func wallpaperStoreParsesColorsSystemColorConfigurationRegardlessOfProviderName() throws {
-    let blackData = try wallpaperSystemColorStoreData(name: "black")
-    #expect(WallpaperStoreConfiguration.solidColor(in: blackData) == WallpaperRGB(
-        red: 0,
-        green: 0,
-        blue: 0,
-        alpha: 1
-    ))
+@Test func wallpaperStoreUsesDirectDesktopFillColorForSystemColorSelection() async throws {
+    let directColor = WallpaperRGB(
+        red: 84.0 / 255,
+        green: 85.0 / 255,
+        blue: 84.0 / 255
+    )
+    for name in ["stone", "future-system-color"] {
+        let data = try wallpaperSystemColorStoreData(name: name)
+        #expect(WallpaperStoreConfiguration.solidColor(in: data) == nil)
+        #expect(WallpaperStoreConfiguration.solidColor(
+            in: data,
+            desktopFillColor: directColor
+        ) == directColor)
+    }
 
-    let whiteData = try wallpaperSystemColorStoreData(name: "white")
-    #expect(WallpaperStoreConfiguration.solidColor(in: whiteData) == WallpaperRGB(
-        red: 1,
-        green: 1,
-        blue: 1,
-        alpha: 1
-    ))
+    let stoneData = try wallpaperSystemColorStoreData(name: "stone")
+    let resolver = WallpaperSourceResolver()
+    #expect(resolver.resolve(
+        indexData: stoneData,
+        displayUUID: nil,
+        workspaceURL: nil
+    ) == .unavailable)
+    let source = resolver.resolve(
+        indexData: stoneData,
+        displayUUID: nil,
+        workspaceURL: nil,
+        workspaceFillColor: directColor
+    )
+    #expect(source == .solid(directColor))
+
+    let appearances = await WallpaperAppearanceSampler().appearances(
+        for: WallpaperAppearanceRequest(
+            source: source,
+            screenSize: CGSize(width: 1_920, height: 1_080),
+            scalingMode: .fill,
+            fillColor: directColor,
+            panelRegions: [
+                WallpaperPanelRegion(
+                    identifier: 0,
+                    frame: CGRect(x: 0, y: 0, width: 300, height: 56),
+                    previousAppearance: .light
+                ),
+            ]
+        )
+    )
+    let result = try #require(appearances.first)
+    #expect(result.backgroundColor == directColor)
+    #expect(result.appearance == .dark)
 }
 
 @Test func wallpaperStoreResolvesDynamicAssetPreviewWithoutUsingNetwork() throws {
@@ -530,6 +648,314 @@ private func wallpaperSourceStoreData(
     #expect(movie == .staticImage(WallpaperSourceCandidate(url: movieURL, kind: .video)))
 }
 
+@Test func wallpaperSourceResolverUsesSystemDesktopPictureSchemaAcrossLegacyDynamicWallpapers() throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appending(path: "CodexPulseDesktopPictureSchemaTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let resolver = WallpaperSourceResolver(
+        aerialResourcesDirectory: temporaryDirectory,
+        neptuneResourcesDirectory: temporaryDirectory,
+        sequoiaResourcesDirectory: temporaryDirectory,
+        aerialMovieDirectories: []
+    )
+    for name in ["Big Sur", "Monterey Graphic", "Catalina"] {
+        let descriptorURL = temporaryDirectory.appending(path: "\(name).madesktop")
+        let baseURL = temporaryDirectory.appending(path: "\(name).heic")
+        let lightURL = temporaryDirectory.appending(path: "\(name) Light.heic")
+        let darkURL = temporaryDirectory.appending(path: "\(name) Dark.heic")
+        for url in [baseURL, lightURL, darkURL] {
+            try Data(name.utf8).write(to: url)
+        }
+        try writeDesktopPictureDescriptor(
+            at: descriptorURL,
+            thumbnailPath: baseURL.path,
+            isDynamic: true
+        )
+
+        let source = resolver.resolve(
+            indexData: try wallpaperSourceStoreData(
+                provider: "com.apple.wallpaper.choice.dynamic",
+                configuration: [
+                    "type": "systemDesktopPicture",
+                    "url": ["relative": descriptorURL.absoluteString],
+                ]
+            ),
+            displayUUID: nil,
+            workspaceURL: nil
+        )
+        #expect(source == .phaseUnknown([
+            WallpaperSourceCandidate(url: darkURL),
+            WallpaperSourceCandidate(url: lightURL),
+            WallpaperSourceCandidate(url: baseURL),
+        ]))
+        #expect(!source.candidates.contains { $0.url == descriptorURL })
+    }
+}
+
+@Test func wallpaperSourceResolverHandlesDesktopPictureDescriptorStylesAndStaticAssets() throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appending(path: "CodexPulseDesktopPictureStyleTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+    let resolver = WallpaperSourceResolver(
+        aerialResourcesDirectory: temporaryDirectory,
+        neptuneResourcesDirectory: temporaryDirectory,
+        sequoiaResourcesDirectory: temporaryDirectory,
+        aerialMovieDirectories: []
+    )
+
+    let dynamicDescriptor = temporaryDirectory.appending(path: "Dynamic.madesktop")
+    let baseURL = temporaryDirectory.appending(path: "Dynamic.heic")
+    let lightURL = temporaryDirectory.appending(path: "Dynamic Light.heic")
+    let darkURL = temporaryDirectory.appending(path: "Dynamic Dark.heic")
+    for url in [baseURL, lightURL, darkURL] {
+        try Data("fixture".utf8).write(to: url)
+    }
+    try writeDesktopPictureDescriptor(
+        at: dynamicDescriptor,
+        thumbnailPath: "Dynamic.heic",
+        isDynamic: true
+    )
+
+    func source(style: String) throws -> WallpaperSource {
+        resolver.resolve(
+            indexData: try wallpaperSourceStoreData(
+                provider: "future.provider.with.schema",
+                files: [dynamicDescriptor],
+                styleID: style
+            ),
+            displayUUID: nil,
+            workspaceURL: nil
+        )
+    }
+
+    #expect(try source(style: "light") == .staticImage(WallpaperSourceCandidate(url: lightURL)))
+    #expect(try source(style: "dark") == .staticImage(WallpaperSourceCandidate(url: darkURL)))
+
+    let staticDescriptor = temporaryDirectory.appending(path: "Static.madesktop")
+    let staticURL = temporaryDirectory.appending(path: "Static.jpg")
+    try Data("static".utf8).write(to: staticURL)
+    try writeDesktopPictureDescriptor(
+        at: staticDescriptor,
+        thumbnailPath: staticURL.path,
+        isDynamic: false
+    )
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.wallpaper.choice.dynamic",
+            files: [staticDescriptor]
+        ),
+        displayUUID: nil,
+        workspaceURL: nil
+    ) == .staticImage(WallpaperSourceCandidate(url: staticURL)))
+
+    let baseOnlyDescriptor = temporaryDirectory.appending(path: "Solar Gradients.madesktop")
+    let baseOnlyURL = temporaryDirectory.appending(path: "Solar Gradients.heic")
+    try Data("base".utf8).write(to: baseOnlyURL)
+    try writeDesktopPictureDescriptor(
+        at: baseOnlyDescriptor,
+        thumbnailPath: baseOnlyURL.path,
+        isDynamic: true
+    )
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.wallpaper.choice.dynamic",
+            files: [baseOnlyDescriptor]
+        ),
+        displayUUID: nil,
+        workspaceURL: nil
+    ) == .staticImage(WallpaperSourceCandidate(url: baseOnlyURL)))
+}
+
+@Test func wallpaperSourceResolverRejectsInvalidDescriptorsDirectoriesAndUnauthorizedFallbacks() throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appending(path: "CodexPulseDesktopPictureSafetyTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+    let resolver = WallpaperSourceResolver(
+        aerialResourcesDirectory: temporaryDirectory,
+        neptuneResourcesDirectory: temporaryDirectory,
+        sequoiaResourcesDirectory: temporaryDirectory,
+        aerialMovieDirectories: []
+    )
+    let workspaceURL = temporaryDirectory.appending(path: "workspace.jpg")
+    let explicitURL = temporaryDirectory.appending(path: "explicit.png")
+    let rawImageURL = temporaryDirectory.appending(path: "camera-raw.dng")
+    let mpegMovieURL = temporaryDirectory.appending(path: "legacy-video.mpeg")
+    try Data("workspace".utf8).write(to: workspaceURL)
+    try Data("explicit".utf8).write(to: explicitURL)
+    try Data("raw".utf8).write(to: rawImageURL)
+    try Data("video".utf8).write(to: mpegMovieURL)
+
+    let malformedDescriptor = temporaryDirectory.appending(path: "Malformed.madesktop")
+    try Data("not a plist".utf8).write(to: malformedDescriptor)
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.wallpaper.choice.image",
+            files: [malformedDescriptor]
+        ),
+        displayUUID: nil,
+        workspaceURL: workspaceURL
+    ) == .unavailable)
+
+    let missingThumbnailDescriptor = temporaryDirectory.appending(path: "Missing Thumbnail.madesktop")
+    try writeDesktopPictureDescriptor(
+        at: missingThumbnailDescriptor,
+        thumbnailPath: "does-not-exist.heic",
+        isDynamic: true
+    )
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.wallpaper.choice.dynamic",
+            files: [missingThumbnailDescriptor]
+        ),
+        displayUUID: nil,
+        workspaceURL: workspaceURL
+    ) == .unavailable)
+
+    let descriptorDirectory = temporaryDirectory.appending(
+        path: "Directory.madesktop",
+        directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(at: descriptorDirectory, withIntermediateDirectories: true)
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.wallpaper.choice.image",
+            files: [descriptorDirectory]
+        ),
+        displayUUID: nil,
+        workspaceURL: workspaceURL
+    ) == .unavailable)
+
+    let imageFolder = temporaryDirectory.appending(path: "Wallpapers", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: imageFolder, withIntermediateDirectories: true)
+    try Data("nested".utf8).write(to: imageFolder.appending(path: "nested.jpg"))
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.wallpaper.choice.image-folder",
+            files: [imageFolder]
+        ),
+        displayUUID: nil,
+        workspaceURL: imageFolder
+    ) == .unavailable)
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.wallpaper.choice.image-folder",
+            files: [imageFolder]
+        ),
+        displayUUID: nil,
+        workspaceURL: workspaceURL
+    ) == .staticImage(WallpaperSourceCandidate(url: workspaceURL)))
+
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.example.UnknownProcedural",
+            files: [explicitURL]
+        ),
+        displayUUID: nil,
+        workspaceURL: workspaceURL
+    ) == .staticImage(WallpaperSourceCandidate(url: explicitURL)))
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "future.image.provider",
+            files: [rawImageURL]
+        ),
+        displayUUID: nil,
+        workspaceURL: nil
+    ) == .staticImage(WallpaperSourceCandidate(url: rawImageURL, kind: .image)))
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "future.movie.provider",
+            files: [mpegMovieURL]
+        ),
+        displayUUID: nil,
+        workspaceURL: nil
+    ) == .staticImage(WallpaperSourceCandidate(url: mpegMovieURL, kind: .video)))
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(provider: "com.example.UnknownProcedural"),
+        displayUUID: nil,
+        workspaceURL: workspaceURL
+    ) == .unavailable)
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(provider: "com.example.extension.photos"),
+        displayUUID: nil,
+        workspaceURL: workspaceURL
+    ) == .unavailable)
+
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.wallpaper.choice.image",
+            configuration: [
+                "type": "systemDesktopPicture",
+                "url": ["relative": "https://example.com/remote.heic"],
+            ]
+        ),
+        displayUUID: nil,
+        workspaceURL: workspaceURL
+    ) == .unavailable)
+
+    let remoteThumbnailDescriptor = temporaryDirectory.appending(path: "Remote Thumbnail.madesktop")
+    try writeDesktopPictureDescriptor(
+        at: remoteThumbnailDescriptor,
+        thumbnailPath: "https://example.com/remote.heic",
+        isDynamic: false
+    )
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.wallpaper.choice.image",
+            files: [remoteThumbnailDescriptor]
+        ),
+        displayUUID: nil,
+        workspaceURL: workspaceURL
+    ) == .unavailable)
+}
+
+@Test func wallpaperSourceResolverPrefersExplicitFilesThenConfigurationBeforeWorkspaceFallback() throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appending(path: "CodexPulseDesktopPicturePrecedenceTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+    let resolver = WallpaperSourceResolver(
+        aerialResourcesDirectory: temporaryDirectory,
+        neptuneResourcesDirectory: temporaryDirectory,
+        sequoiaResourcesDirectory: temporaryDirectory,
+        aerialMovieDirectories: []
+    )
+    let explicitURL = temporaryDirectory.appending(path: "explicit.jpg")
+    let configuredURL = temporaryDirectory.appending(path: "configured.heic")
+    let workspaceURL = temporaryDirectory.appending(path: "workspace.png")
+    let directory = temporaryDirectory.appending(path: "directory", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    for url in [explicitURL, configuredURL, workspaceURL] {
+        try Data("fixture".utf8).write(to: url)
+    }
+    let configuration: [String: Any] = [
+        "type": "systemDesktopPicture",
+        "url": ["relative": configuredURL.absoluteString],
+    ]
+
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "com.apple.wallpaper.choice.image",
+            files: [explicitURL],
+            configuration: configuration
+        ),
+        displayUUID: nil,
+        workspaceURL: workspaceURL
+    ) == .staticImage(WallpaperSourceCandidate(url: explicitURL)))
+    #expect(resolver.resolve(
+        indexData: try wallpaperSourceStoreData(
+            provider: "future.provider",
+            files: [directory],
+            configuration: configuration
+        ),
+        displayUUID: nil,
+        workspaceURL: workspaceURL
+    ) == .staticImage(WallpaperSourceCandidate(url: configuredURL)))
+}
+
 @Test func wallpaperSourceResolverFindsAerialCandidatesAndRejectsStaleProceduralFallback() throws {
     let temporaryDirectory = FileManager.default.temporaryDirectory
         .appending(path: "CodexPulseAerialSourceTests-(UUID().uuidString)", directoryHint: .isDirectory)
@@ -608,6 +1034,74 @@ private func wallpaperSourceStoreData(
         ],
         previous: .light
     ) == .light)
+}
+
+@Test func wallpaperSourceResolverUsesLocalSequoiaStyleCandidatesWithoutStaleFallback() throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appending(path: "CodexPulseSequoiaSourceTests-(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+    let lightURL = temporaryDirectory.appending(path: "thumbnail light.heic")
+    let darkURL = temporaryDirectory.appending(path: "thumbnail dark.heic")
+    let staleURL = temporaryDirectory.appending(path: "DefaultDesktop.heic")
+    for (url, contents) in [
+        (lightURL, "light"),
+        (darkURL, "dark"),
+        (staleURL, "stale"),
+    ] {
+        try Data(contents.utf8).write(to: url)
+    }
+    let resolver = WallpaperSourceResolver(
+        aerialResourcesDirectory: temporaryDirectory,
+        neptuneResourcesDirectory: temporaryDirectory,
+        sequoiaResourcesDirectory: temporaryDirectory,
+        aerialMovieDirectories: []
+    )
+
+    let dynamic = resolver.resolve(
+        indexData: try wallpaperSequoiaStoreData(styleID: "dynamic"),
+        displayUUID: nil,
+        workspaceURL: staleURL
+    )
+    #expect(dynamic == .phaseUnknown([
+        WallpaperSourceCandidate(url: darkURL),
+        WallpaperSourceCandidate(url: lightURL),
+    ]))
+
+    let light = resolver.resolve(
+        indexData: try wallpaperSequoiaStoreData(styleID: "light"),
+        displayUUID: nil,
+        workspaceURL: staleURL
+    )
+    let dark = resolver.resolve(
+        indexData: try wallpaperSequoiaStoreData(styleID: "dark"),
+        displayUUID: nil,
+        workspaceURL: staleURL
+    )
+    #expect(light == .staticImage(WallpaperSourceCandidate(url: lightURL)))
+    #expect(dark == .staticImage(WallpaperSourceCandidate(url: darkURL)))
+    #expect(dynamic.identity != light.identity)
+    #expect(light.identity != dark.identity)
+
+    try FileManager.default.removeItem(at: darkURL)
+    let automaticWithOneCandidate = resolver.resolve(
+        indexData: try wallpaperSequoiaStoreData(styleID: "automatic"),
+        displayUUID: nil,
+        workspaceURL: staleURL
+    )
+    #expect(automaticWithOneCandidate == .staticImage(WallpaperSourceCandidate(url: lightURL)))
+    #expect(resolver.resolve(
+        indexData: try wallpaperSequoiaStoreData(styleID: "dark"),
+        displayUUID: nil,
+        workspaceURL: staleURL
+    ) == .unavailable)
+
+    try FileManager.default.removeItem(at: lightURL)
+    #expect(resolver.resolve(
+        indexData: try wallpaperSequoiaStoreData(styleID: "dynamic"),
+        displayUUID: nil,
+        workspaceURL: staleURL
+    ) == .unavailable)
 }
 
 @Test func wallpaperStoreMonitorDeliversChangesOnMainActor() async throws {

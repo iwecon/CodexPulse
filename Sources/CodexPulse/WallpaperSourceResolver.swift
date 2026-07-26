@@ -1,4 +1,18 @@
 import Foundation
+import UniformTypeIdentifiers
+
+private func wallpaperContentType(for url: URL) -> UTType? {
+    if let values = try? url.resourceValues(forKeys: [.contentTypeKey]),
+       let contentType = values.contentType {
+        return contentType
+    }
+    guard !url.pathExtension.isEmpty else { return nil }
+    return UTType(filenameExtension: url.pathExtension)
+}
+
+private func isWallpaperVideoType(_ type: UTType) -> Bool {
+    type.conforms(to: .movie) || type.conforms(to: .video)
+}
 
 enum WallpaperAssetKind: Sendable, Equatable, Hashable {
     case image
@@ -20,10 +34,11 @@ struct WallpaperSourceCandidate: Sendable, Equatable, Hashable {
     }
 
     private static func kind(for url: URL) -> WallpaperAssetKind {
-        switch url.pathExtension.lowercased() {
-        case "mov", "mp4", "m4v": .video
-        default: .image
+        guard let type = wallpaperContentType(for: url),
+              isWallpaperVideoType(type) else {
+            return .image
         }
+        return .video
     }
 }
 
@@ -61,14 +76,20 @@ enum WallpaperSource: Sendable, Equatable {
 struct WallpaperSourceResolver: Sendable {
     static let defaultAerialResourcesDirectory = WallpaperStoreConfiguration.defaultAerialResourcesDirectory
     static let defaultNeptuneResourcesDirectory = WallpaperStoreConfiguration.defaultNeptuneResourcesDirectory
+    static let defaultSequoiaResourcesDirectory = URL(
+        filePath: "/System/Library/ExtensionKit/Extensions/WallpaperSequoiaExtension.appex/Contents/Resources",
+        directoryHint: .isDirectory
+    )
 
     let aerialResourcesDirectory: URL
     let neptuneResourcesDirectory: URL
+    let sequoiaResourcesDirectory: URL
     let aerialMovieDirectories: [URL]
 
     init(
         aerialResourcesDirectory: URL = Self.defaultAerialResourcesDirectory,
         neptuneResourcesDirectory: URL = Self.defaultNeptuneResourcesDirectory,
+        sequoiaResourcesDirectory: URL = Self.defaultSequoiaResourcesDirectory,
         aerialMovieDirectories: [URL] = [
             FileManager.default.homeDirectoryForCurrentUser
                 .appending(path: "Library/Application Support/com.apple.wallpaper/aerials/videos"),
@@ -80,13 +101,15 @@ struct WallpaperSourceResolver: Sendable {
     ) {
         self.aerialResourcesDirectory = aerialResourcesDirectory
         self.neptuneResourcesDirectory = neptuneResourcesDirectory
+        self.sequoiaResourcesDirectory = sequoiaResourcesDirectory
         self.aerialMovieDirectories = aerialMovieDirectories
     }
 
     func resolve(
         indexData: Data?,
         displayUUID: String?,
-        workspaceURL: URL?
+        workspaceURL: URL?,
+        workspaceFillColor: WallpaperRGB? = nil
     ) -> WallpaperSource {
         guard let indexData,
               let root = try? PropertyListSerialization.propertyList(
@@ -98,28 +121,68 @@ struct WallpaperSourceResolver: Sendable {
               let content = desktopContent(in: selection),
               let choices = content["Choices"] as? [[String: Any]],
               !choices.isEmpty else {
-            return workspaceURL.map { .staticImage(WallpaperSourceCandidate(url: $0)) } ?? .unavailable
+            return .unavailable
         }
 
         if let color = WallpaperStoreConfiguration.solidColor(
             in: indexData,
-            displayUUID: displayUUID
+            displayUUID: displayUUID,
+            desktopFillColor: workspaceFillColor
         ) {
             return .solid(color)
         }
 
-        let providers = choices.compactMap { $0["Provider"] as? String }
-        let lowercasedProviders = providers.map { $0.lowercased() }
-        let files = choices.flatMap(fileURLs(in:))
-        if lowercasedProviders.contains(where: Self.isFileBackedProvider) {
-            if let file = files.first(where: Self.isReadableFile) {
-                return .staticImage(WallpaperSourceCandidate(url: file))
+        let style = decodedDictionary(content["EncodedOptionValues"])
+            .flatMap(styleID(in:))?
+            .lowercased()
+        var containsInvalidAuthoritativeSource = false
+        for choice in choices {
+            for file in fileURLs(in: choice) {
+                if file.pathExtension.lowercased() == "madesktop" {
+                    guard Self.isRegularReadableFile(file) else {
+                        containsInvalidAuthoritativeSource = true
+                        continue
+                    }
+                    if let source = desktopPictureSource(descriptorURL: file, style: style) {
+                        return source
+                    }
+                    containsInvalidAuthoritativeSource = true
+                } else if Self.isSupportedMediaFile(file) {
+                    return .staticImage(WallpaperSourceCandidate(url: file))
+                }
             }
-            return workspaceURL.map { .staticImage(WallpaperSourceCandidate(url: $0)) } ?? .unavailable
         }
 
-        if lowercasedProviders.contains(where: { $0.contains("neptuneoneextension") }) {
+        for choice in choices {
+            guard let configuration = decodedDictionary(choice["Configuration"]),
+                  configurationType(in: configuration)?.lowercased() == "systemdesktoppicture" else {
+                continue
+            }
+            guard let url = configurationURL(in: configuration) else {
+                containsInvalidAuthoritativeSource = true
+                continue
+            }
+            if url.pathExtension.lowercased() == "madesktop" {
+                if let source = desktopPictureSource(descriptorURL: url, style: style) {
+                    return source
+                }
+                containsInvalidAuthoritativeSource = true
+            } else if Self.isSupportedMediaFile(url) {
+                return .staticImage(WallpaperSourceCandidate(url: url))
+            } else {
+                containsInvalidAuthoritativeSource = true
+            }
+        }
+
+        let providers = choices.compactMap { $0["Provider"] as? String }
+        let lowercasedProviders = providers.map { $0.lowercased() }
+
+        if lowercasedProviders.contains("com.apple.neptuneoneextension") {
             return neptuneSource(content: content)
+        }
+
+        if lowercasedProviders.contains("com.apple.wallpaper.choice.sequoia") {
+            return sequoiaSource(content: content)
         }
 
         if let assetID = choices.lazy.compactMap(assetID(in:)).first {
@@ -134,12 +197,55 @@ struct WallpaperSourceResolver: Sendable {
             return source(for: candidates)
         }
 
-        // A Store-backed extension/procedural selection is authoritative even when its
-        // private renderer cannot be sampled. Never substitute NSWorkspace's stale URL.
-        if lowercasedProviders.contains(where: Self.isStoreBackedDynamicProvider) {
-            return .unavailable
+        if !containsInvalidAuthoritativeSource,
+           lowercasedProviders.contains(where: Self.allowsWorkspaceFallback),
+           let workspaceURL,
+           Self.isSupportedMediaFile(workspaceURL) {
+            return .staticImage(WallpaperSourceCandidate(url: workspaceURL))
         }
         return .unavailable
+    }
+
+    private func desktopPictureSource(descriptorURL: URL, style: String?) -> WallpaperSource? {
+        guard Self.isRegularReadableFile(descriptorURL),
+              let data = try? Data(contentsOf: descriptorURL),
+              let descriptor = try? PropertyListSerialization.propertyList(
+                from: data,
+                options: [],
+                format: nil
+              ) as? [String: Any],
+              let thumbnailPath = descriptor["thumbnailPath"] as? String,
+              let isDynamic = Self.boolValue(descriptor["isDynamic"]),
+              let baseURL = Self.descriptorAssetURL(
+                thumbnailPath,
+                relativeTo: descriptorURL.deletingLastPathComponent()
+              ),
+              Self.isSupportedMediaFile(baseURL) else {
+            return nil
+        }
+
+        guard isDynamic else {
+            return .staticImage(WallpaperSourceCandidate(url: baseURL))
+        }
+
+        let stem = baseURL.deletingPathExtension().lastPathComponent
+        let ext = baseURL.pathExtension
+        let directory = baseURL.deletingLastPathComponent()
+        let light = directory.appending(path: "\(stem) Light.\(ext)")
+        let dark = directory.appending(path: "\(stem) Dark.\(ext)")
+
+        if style?.contains("light") == true {
+            let selected = Self.isSupportedMediaFile(light) ? light : baseURL
+            return .staticImage(WallpaperSourceCandidate(url: selected))
+        }
+        if style?.contains("dark") == true {
+            let selected = Self.isSupportedMediaFile(dark) ? dark : baseURL
+            return .staticImage(WallpaperSourceCandidate(url: selected))
+        }
+
+        return source(for: [baseURL, light, dark]
+            .filter(Self.isSupportedMediaFile)
+            .map { WallpaperSourceCandidate(url: $0) })
     }
 
     private func neptuneSource(content: [String: Any]) -> WallpaperSource {
@@ -160,6 +266,29 @@ struct WallpaperSourceResolver: Sendable {
                 : .unavailable
         }
         guard style == "dynamic" else { return .unavailable }
+        return source(for: [light, dark]
+            .filter(Self.isReadableFile)
+            .map { WallpaperSourceCandidate(url: $0) })
+    }
+
+    private func sequoiaSource(content: [String: Any]) -> WallpaperSource {
+        guard let options = decodedDictionary(content["EncodedOptionValues"]),
+              let style = styleID(in: options)?.lowercased() else {
+            return .unavailable
+        }
+        let light = sequoiaResourcesDirectory.appending(path: "thumbnail light.heic")
+        let dark = sequoiaResourcesDirectory.appending(path: "thumbnail dark.heic")
+        if style.contains("light") {
+            return Self.isReadableFile(light)
+                ? .staticImage(WallpaperSourceCandidate(url: light))
+                : .unavailable
+        }
+        if style.contains("dark") {
+            return Self.isReadableFile(dark)
+                ? .staticImage(WallpaperSourceCandidate(url: dark))
+                : .unavailable
+        }
+        guard style == "dynamic" || style == "automatic" else { return .unavailable }
         return source(for: [light, dark]
             .filter(Self.isReadableFile)
             .map { WallpaperSourceCandidate(url: $0) })
@@ -193,14 +322,42 @@ struct WallpaperSourceResolver: Sendable {
     }
 
     private static func fileURL(_ value: Any) -> URL? {
-        if let url = value as? URL { return url }
+        if let url = value as? URL { return url.isFileURL ? url : nil }
         if let string = value as? String {
-            return URL(string: string).flatMap { $0.isFileURL ? $0 : nil }
-                ?? URL(filePath: string)
+            if let url = URL(string: string), url.scheme != nil {
+                return url.isFileURL ? url : nil
+            }
+            return URL(filePath: string)
         }
         if let dictionary = value as? [String: Any] {
             for key in ["URL", "url", "Path", "path", "relative"] {
                 if let value = dictionary[key], let url = fileURL(value) { return url }
+            }
+        }
+        return nil
+    }
+
+    private func configurationType(in configuration: [String: Any]) -> String? {
+        if let type = configuration["type"] as? String { return type }
+        for key in ["value", "configuration", "relative"] {
+            if let nested = configuration[key] as? [String: Any],
+               let type = configurationType(in: nested) {
+                return type
+            }
+        }
+        return nil
+    }
+
+    private func configurationURL(in configuration: [String: Any]) -> URL? {
+        for key in ["url", "URL"] {
+            if let value = configuration[key], let url = Self.fileURL(value) {
+                return url.isFileURL ? url : nil
+            }
+        }
+        for value in configuration.values {
+            if let nested = value as? [String: Any],
+               let url = configurationURL(in: nested) {
+                return url
             }
         }
         return nil
@@ -250,19 +407,50 @@ struct WallpaperSourceResolver: Sendable {
         return desktop["Content"] as? [String: Any]
     }
 
-    private static func isFileBackedProvider(_ provider: String) -> Bool {
-        ["picture", "photo", "movie", "choice.image"].contains { provider.contains($0) }
+    private static func allowsWorkspaceFallback(_ provider: String) -> Bool {
+        [
+            "com.apple.wallpaper.choice.image",
+            "com.apple.wallpaper.choice.image-folder",
+            "com.apple.wallpaper.choice.photos",
+            "com.apple.wallpaper.choice.movie",
+        ].contains(provider)
     }
 
-    private static func isStoreBackedDynamicProvider(_ provider: String) -> Bool {
-        provider.contains("extension")
-            || provider.contains("aerial")
-            || provider.contains("dynamic")
-            || provider.contains("procedural")
+    private static func descriptorAssetURL(_ path: String, relativeTo directory: URL) -> URL? {
+        if let url = URL(string: path), url.scheme != nil {
+            return url.isFileURL ? url : nil
+        }
+        guard !path.isEmpty else { return nil }
+        return path.hasPrefix("/")
+            ? URL(filePath: path)
+            : directory.appending(path: path)
+    }
+
+    private static func boolValue(_ value: Any?) -> Bool? {
+        if let value = value as? Bool { return value }
+        if let value = value as? NSNumber { return value.boolValue }
+        return nil
+    }
+
+    private static func isSupportedMediaFile(_ url: URL) -> Bool {
+        guard isRegularReadableFile(url),
+              let type = wallpaperContentType(for: url) else {
+            return false
+        }
+        return type.conforms(to: .image) || isWallpaperVideoType(type)
+    }
+
+    private static func isRegularReadableFile(_ url: URL) -> Bool {
+        guard url.isFileURL,
+              FileManager.default.isReadableFile(atPath: url.path),
+              let values = try? url.resourceValues(forKeys: [.isRegularFileKey]) else {
+            return false
+        }
+        return values.isRegularFile == true
     }
 
     private static func isReadableFile(_ url: URL) -> Bool {
-        FileManager.default.isReadableFile(atPath: url.path)
+        isRegularReadableFile(url)
     }
 
     #if DEBUG

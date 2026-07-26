@@ -452,10 +452,13 @@ final class DockPanelController {
         let workspace = NSWorkspace.shared
         let displayUUID = Self.displayUUID(for: screen)
         let storeData = try? Data(contentsOf: wallpaperStoreIndexURL, options: .mappedIfSafe)
+        let options = workspace.desktopImageOptions(for: screen)
+        let fillColor = Self.wallpaperRGB(from: options?[.fillColor] as? NSColor)
         let source = wallpaperSourceResolver.resolve(
             indexData: storeData,
             displayUUID: displayUUID,
-            workspaceURL: workspace.desktopImageURL(for: screen)
+            workspaceURL: workspace.desktopImageURL(for: screen),
+            workspaceFillColor: fillColor
         )
         #if DEBUG
         logWallpaperSourceIfNeeded(
@@ -470,12 +473,10 @@ final class DockPanelController {
             removeWallpaperRefreshState(reason: reason)
             return
         }
-        let options = workspace.desktopImageOptions(for: screen)
         let scalingRawValue = (options?[.imageScaling] as? NSNumber)?.uintValue
         let scaling = scalingRawValue.flatMap(NSImageScaling.init(rawValue:))
             ?? .scaleProportionallyUpOrDown
         let allowClipping = (options?[.allowClipping] as? NSNumber)?.boolValue ?? false
-        let fillColor = Self.wallpaperRGB(from: options?[.fillColor] as? NSColor)
         let screenOrigin = screen.frame.origin
         let panelRegions = [
             WallpaperRefreshState.PanelRegion(
@@ -632,7 +633,7 @@ final class DockPanelController {
             taskActivityAppearance = semanticAppearance
             presentationState.taskAppearance = semanticAppearance
             rightPanel.appearance = appearance
-            sessionLinkController.setAppearance(appearance)
+            sessionLinkController.setAppearance(semanticAppearance)
             resizeController.setAppearance(appearance, for: .taskActivity)
         }
     }
