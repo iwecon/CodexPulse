@@ -9,7 +9,7 @@
   <a href="README.ko.md">한국어</a>
 </p>
 
-Codex Pulse 是一个使用 SwiftUI 与 AppKit 构建的 macOS 桌面配件，通过 Dock 两侧的**用量概览面板**和**任务活动面板**展示本机 Codex Token 用量、周额度和最近任务状态。所有数据均从本机读取，不上传。
+Codex Pulse 是一个使用 SwiftUI 与 AppKit 构建的 macOS 桌面配件，通过 Dock 两侧的**用量概览面板**和**任务活动面板**展示本机 Codex、Claude Code 与 OpenCode 的 Token 用量、Codex 周额度和最近任务状态。所有数据均从本机读取，不上传。
 
 <p align="center">
   <a href="https://iwecon.github.io/CodexPulse/">
@@ -74,9 +74,9 @@ codex-pulse install
 
 ## 功能
 
-- 当前只统计 Codex 的 Token 用量。Claude Code 和 OpenCode 的扫描实现保留，但默认关闭，后续可通过 `UsageSourcePolicy.enabledTools` 重新启用。
-- 展示最近 14 天的用量趋势，并在今日日期旁显示今日 Token 消耗。
-- 展示 Codex 周额度、剩余比例、重置时间、按剩余时长分级的倒计时（最后一分钟显示秒），以及按精确剩余时间折算的日均可用百分比。
+- 统计 Codex（`~/.codex`）、Claude Code（`~/.claude/projects`）与 OpenCode（`~/.local/share/opencode`）的 Token 用量。工具在最近 14 天可见窗口内有用量时自动显示；未安装或近 14 天未使用的工具自动隐藏，无需任何设置。
+- 展示最近 14 天的用量趋势。仅一个工具活跃时保持单色趋势，并在今日日期旁显示今日 Token 消耗；多个工具活跃时，每日柱形按工具堆叠固定色相的分段（亮度跟随壁纸自适应文本极性），并以彩点图例显示各工具的 14 天总量。
+- 展示 Codex 周额度（本地额度数据仅 Codex 提供，Codex 近 14 天未使用时隐藏该区块）、剩余比例、重置时间、按剩余时长分级的倒计时（最后一分钟显示秒），以及按精确剩余时间折算的日均可用百分比。
 - 任务活动面板会按当前可见内容动态调整高度，通常最高 120px；从底部开始按项目和会话展示所有执行中及最近 10 分钟完成的 Codex 任务。执行中的任务不受 10 分钟限制且必须全部显示，必要时面板会超过 120px；剩余空间再按完成时间由新到旧容纳已完成任务。执行中的任务使用带渐变拖尾的旋转圆环指示状态；新增和移除任务时会使用短暂过渡动画，并遵循系统“减少动态效果”设置；完成超过 3 分钟的任务消息会降低对比度，完成超过 10 分钟后从列表移除；最新用户消息按实际一至两行紧凑显示。
 - 自动跟随 Dock 位于底部、左侧或右侧时调整面板位置。
 - 两个主面板的内容文字、会话标题与项目标题统一使用白字和轻微黑色阴影，不再根据墙纸明暗切换为黑字或绘制多层反色描边；主文字与次要文字仍保留不同亮度层级。面板保持完全透明，不截取屏幕，也不需要“屏幕录制”权限。
@@ -95,7 +95,7 @@ Codex 额度以会话日志中时间最新的 `rate_limits` 快照为准，避�
 ## 资源占用
 
 - 首次启动需要读取现有历史数据；JSONL 使用固定大小分块逐行解析，不会把整个日志文件同时展开为 `Data` 和 `String`。
-- Codex 解析结果按文件缓存，后续刷新只重新解析新增或发生变化的文件。当前关闭的 Claude Code 和 OpenCode 也保留各自的文件缓存及数据库/WAL/SHM 缓存实现，重新启用后继续遵循增量扫描规则。
+- Codex 与 Claude Code 的解析结果按文件缓存，OpenCode 按数据库/WAL/SHM 版本缓存，后续刷新只重新解析新增或发生变化的数据。
 - Codex 任务日志按字节游标增量读取；任务索引查询会短期缓存，避免每次轮询都重新查询 SQLite。
 - 用户会话锁定或显示器休眠时暂停用量与任务数据刷新，并冻结执行中任务的状态动画；解锁且显示器重新唤醒后立即恢复。
 - 数据内容未变化时不会重复发布 SwiftUI 状态。倒计时、任务时长和运行指示器只刷新各自的小型子视图，避免整个面板高频重绘。
@@ -138,9 +138,9 @@ swift test
 
 ## 数据来源
 
-- Codex 用量（已启用）：`~/.codex/sessions/**/*.jsonl`
+- Codex 用量：`~/.codex/sessions/**/*.jsonl` 与 `~/.codex/archived_sessions/**/*.jsonl`
 - Codex 任务索引：`~/.codex/state_*.sqlite`
-- Claude Code（已关闭，入口保留）：`~/.claude/projects/**/*.jsonl`
-- OpenCode（已关闭，入口保留）：`~/.local/share/opencode/opencode.db`
+- Claude Code 用量：`~/.claude/projects/**/*.jsonl`
+- OpenCode 用量：`~/.local/share/opencode/opencode.db`
 
-启用的数据源读取失败或不存在时只影响对应工具，不会上传数据或修改原始会话记录。关闭的数据源不会访问其本地文件。
+数据源读取失败或不存在时只影响对应工具，不会上传数据或修改原始会话记录。

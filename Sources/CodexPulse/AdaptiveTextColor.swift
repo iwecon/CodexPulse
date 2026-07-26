@@ -116,6 +116,33 @@ enum AdaptiveTextColor {
         return candidate(upper)
     }
 
+    // MARK: - Tool bar colors
+
+    /// OKLab lightness of trend-bar segments over dark and light panels.
+    static let barLightLightness = 0.8
+    static let barDarkLightness = 0.45
+    static let barChroma = 0.11
+
+    /// Produces a trend-bar color at a fixed hue whose lightness follows the
+    /// panel's text polarity, so per-tool hues stay distinguishable while
+    /// matching the wallpaper-adaptive contrast direction. A `nil` hue is
+    /// achromatic: near-white over dark panels, dark gray over light panels.
+    static func barColor(
+        hueDegrees: Double?,
+        appearance: PanelSemanticAppearance
+    ) -> WallpaperRGB {
+        let lightness = appearance == .dark ? barLightLightness : barDarkLightness
+        guard let hueDegrees else {
+            return rgb(from: OKLab(lightness: lightness, a: 0, b: 0))
+        }
+        let radians = hueDegrees * .pi / 180
+        return rgb(from: OKLab(
+            lightness: lightness,
+            a: barChroma * cos(radians),
+            b: barChroma * sin(radians)
+        ))
+    }
+
     // MARK: - APCA (APCA-W3 0.1.9 four-parameter model)
 
     private static let apcaBlackThreshold = 0.022

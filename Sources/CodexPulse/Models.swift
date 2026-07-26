@@ -6,11 +6,17 @@ enum Tool: String, CaseIterable, Identifiable, Sendable {
     case opencode = "OpenCode"
     var id: Self { self }
     var symbol: String { switch self { case .claude: "brain.head.profile"; case .codex: "terminal"; case .opencode: "chevron.left.forwardslash.chevron.right" } }
+    /// OKLab hue distinguishing this tool's trend-bar segments and legend dot.
+    /// `nil` renders achromatic — OpenCode's monochrome brand shows as white
+    /// on dark panels and dark gray on light panels.
+    var barHueDegrees: Double? { switch self { case .claude: 55; case .codex: 290; case .opencode: nil } }
 }
 
 enum UsageSourcePolicy {
-    /// Product default: retain every source implementation, but collect Codex usage only.
-    static let enabledTools: Set<Tool> = [.codex]
+    /// Product default: scan every source. The Usage Overview Panel shows a
+    /// tool only while it has usage inside the visible 14-day window, so
+    /// uninstalled or dormant tools stay invisible without a setting.
+    static let enabledTools: Set<Tool> = Set(Tool.allCases)
 }
 
 struct Usage: Sendable, Equatable {
@@ -95,6 +101,13 @@ struct Snapshot: Sendable {
     var limits: [RateWindow] = []
     var errors: [Tool: String] = [:]
     var updatedAt = Date()
+
+    /// Tools with usage inside the visible 14-day window, in display order.
+    var activeTools: [Tool] {
+        Tool.allCases.filter { tool in
+            dailyUsage.contains { ($0.usage[tool]?.total ?? 0) > 0 }
+        }
+    }
 
     func hasSameContent(as other: Snapshot) -> Bool {
         usage == other.usage

@@ -901,16 +901,34 @@ struct RecentUsageView: View {
     private var days: [DailyUsage] { model.snapshot.dailyUsage }
     private var maximum: Int { max(days.map(\.total).max() ?? 0, 1) }
     private var total: Int { days.reduce(0) { $0 + $1.total } }
+    private var activeTools: [Tool] { model.snapshot.activeTools }
+    /// Codex is the only source with local rate-limit data; hide the quota
+    /// section when Codex is dormant but keep it as the empty-state anchor.
+    private var showsWeeklyLimit: Bool { activeTools.isEmpty || activeTools.contains(.codex) }
 
     var body: some View {
         HStack(spacing: 6) {
             if presentation.usageSide == .left {
                 trendView
-                Divider().frame(height: 24)
-                WeeklyLimitView(model: model, alignTrailing: false, languageSettings: languageSettings)
+                if showsWeeklyLimit {
+                    Divider().frame(height: 24)
+                    WeeklyLimitView(
+                        model: model,
+                        alignTrailing: false,
+                        quotaBarColor: barColor(for: .codex),
+                        languageSettings: languageSettings
+                    )
+                }
             } else {
-                WeeklyLimitView(model: model, alignTrailing: true, languageSettings: languageSettings)
-                Divider().frame(height: 24)
+                if showsWeeklyLimit {
+                    WeeklyLimitView(
+                        model: model,
+                        alignTrailing: true,
+                        quotaBarColor: barColor(for: .codex),
+                        languageSettings: languageSettings
+                    )
+                    Divider().frame(height: 24)
+                }
                 trendView
             }
         }
@@ -942,31 +960,86 @@ struct RecentUsageView: View {
             }
             HStack(alignment: .bottom, spacing: 2) {
                 ForEach(days) { day in
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(day.total == 0 ? Color.secondary.opacity(0.16) : Color.accentColor.opacity(0.38 + 0.62 * Double(day.total) / Double(maximum)))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 3 + 18 * CGFloat(day.total) / CGFloat(maximum))
+                    bar(for: day)
                         .accessibilityLabel(languageSettings.language.accessibilityDate(day.date))
                         .accessibilityValue(languageSettings.language.tokenCount(day.total))
                 }
             }
             .frame(height: 21, alignment: .bottom)
-            HStack {
-                Text(days.first.map { languageSettings.language.shortDate($0.date) } ?? "—")
-                    .dockPanelTextShadow()
-                Spacer()
-                HStack(spacing: 3) {
-                    Text(days.last.map { languageSettings.language.shortDate($0.date) } ?? "—")
-                        .dockPanelTextShadow()
-                    Text(UsageModel.compact(days.last?.total ?? 0))
+            if activeTools.count > 1 {
+                legendView
+            } else {
+                dateRangeView
+            }
+        }
+        .frame(minWidth: 116)
+    }
+
+    @ViewBuilder
+    private func bar(for day: DailyUsage) -> some View {
+        let height = 3 + 18 * CGFloat(day.total) / CGFloat(maximum)
+        if activeTools.count > 1, day.total > 0 {
+            VStack(spacing: 0) {
+                ForEach(activeTools.reversed()) { tool in
+                    let toolTotal = day.usage[tool]?.total ?? 0
+                    if toolTotal > 0 {
+                        Rectangle()
+                            .fill(barColor(for: tool))
+                            .frame(height: height * CGFloat(toolTotal) / CGFloat(day.total))
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 1.5))
+            .frame(maxWidth: .infinity)
+        } else {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(day.total == 0 ? Color.secondary.opacity(0.16) : Color.accentColor.opacity(0.38 + 0.62 * Double(day.total) / Double(maximum)))
+                .frame(maxWidth: .infinity)
+                .frame(height: height)
+        }
+    }
+
+    private var legendView: some View {
+        HStack(spacing: 5) {
+            ForEach(activeTools) { tool in
+                HStack(spacing: 2) {
+                    Circle()
+                        .fill(barColor(for: tool))
+                        .frame(width: 4, height: 4)
+                    Text(UsageModel.compact(days.reduce(0) { $0 + ($1.usage[tool]?.total ?? 0) }))
                         .dockPanelTextShadow()
                         .monospacedDigit()
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(tool.rawValue)
             }
-            .font(.system(size: 8))
-            .foregroundStyle(.secondary)
         }
-        .frame(minWidth: 116)
+        .font(.system(size: 8))
+        .foregroundStyle(.secondary)
+    }
+
+    private var dateRangeView: some View {
+        HStack {
+            Text(days.first.map { languageSettings.language.shortDate($0.date) } ?? "—")
+                .dockPanelTextShadow()
+            Spacer()
+            HStack(spacing: 3) {
+                Text(days.last.map { languageSettings.language.shortDate($0.date) } ?? "—")
+                    .dockPanelTextShadow()
+                Text(UsageModel.compact(days.last?.total ?? 0))
+                    .dockPanelTextShadow()
+                    .monospacedDigit()
+            }
+        }
+        .font(.system(size: 8))
+        .foregroundStyle(.secondary)
+    }
+
+    private func barColor(for tool: Tool) -> Color {
+        Color(AdaptiveTextColor.barColor(
+            hueDegrees: tool.barHueDegrees,
+            appearance: presentation.usageAppearance == .dark ? .dark : .light
+        ))
     }
 }
 
@@ -1009,6 +1082,8 @@ struct WeeklyLimitView: View {
 
     @Bindable var model: UsageModel
     let alignTrailing: Bool
+    /// Matches the Codex trend-bar color so the quota bar reads as Codex data.
+    let quotaBarColor: Color
     @Bindable var languageSettings: AppLanguageSettings
 
     private var weekly: RateWindow? {
@@ -1040,7 +1115,7 @@ struct WeeklyLimitView: View {
                     ZStack(alignment: .leading) {
                         Capsule().fill(.secondary.opacity(0.16))
                         Capsule()
-                            .fill(used > 85 ? Color.orange : Color.accentColor)
+                            .fill(used > 85 ? Color.orange : quotaBarColor)
                             .frame(width: proxy.size.width * used / 100)
                     }
                 }

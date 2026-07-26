@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Codex Pulse is a Swift Package Manager macOS 26+ accessory app. It renders two nonactivating SwiftUI panels beside the Dock and currently reads only local Codex usage data. Claude Code and OpenCode scanner implementations remain available but disabled. It does not send usage data over the network. Only non-Debug `.app` bundles configure launch at login; Debug and raw-executable runs leave startup state untouched.
+Codex Pulse is a Swift Package Manager macOS 26+ accessory app. It renders two nonactivating SwiftUI panels beside the Dock and reads local Codex, Claude Code, and OpenCode usage data. The Usage Overview Panel shows a tool only while it has usage inside the visible 14-day window, so uninstalled or dormant tools stay hidden without any setting. It does not send usage data over the network. Only non-Debug `.app` bundles configure launch at login; Debug and raw-executable runs leave startup state untouched.
 
 ## Panel terminology
 
@@ -41,7 +41,9 @@ Run the full test suite after changing panel text rendering, wallpaper sampling 
 
 ## Implementation constraints
 
-- Keep Codex as the only enabled usage source in `UsageSourcePolicy.enabledTools` unless a future product requirement explicitly re-enables another source. Preserve the disabled Claude Code and OpenCode scanner entry points so they can be restored without rebuilding their parsers.
+- Keep every usage source enabled in `UsageSourcePolicy.enabledTools`; visibility is decided per tool by `Snapshot.activeTools` (usage inside the visible 14-day window), not by settings. Do not add a user-facing source toggle unless a future product requirement explicitly calls for one.
+- The multi-tool trend renders stacked per-tool segments with fixed OKLab hues (`Tool.barHueDegrees`; a `nil` hue renders achromatic, used for OpenCode's monochrome brand) whose lightness follows the panel's text polarity via `AdaptiveTextColor.barColor`. With one or zero active tools the trend keeps the single-color accent ramp and the date row; with several it shows the per-tool legend instead.
+- The weekly-limit section remains Codex-only: local rate-limit data exists only in Codex rollout files (Claude Code does not persist quota data locally). Hide the section when Codex is dormant; keep it as the empty-state anchor when no tool is active.
 - Keep all source-data access read-only. Never rewrite or delete files under `~/.claude`, `~/.codex`, or `~/.local/share/opencode`.
 - Preserve actor isolation for `UsageScanner` and `TaskMonitor`; UI mutations remain on `MainActor`.
 - Treat session inactivity and display sleep as independent refresh-suspension reasons. Resume refresh loops only after every active reason clears. Preserve cancellation and post-await activity checks so an in-flight scan cannot publish after suspension, and keep task-status animation paused for the full suspended interval.

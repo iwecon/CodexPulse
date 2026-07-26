@@ -437,7 +437,7 @@ import Foundation
     #expect(changedStatistics.parsedJSONFiles == 2)
 }
 
-@Test func usageScannerDefaultsToCodexOnly() async throws {
+@Test func usageScannerDefaultsToEverySource() async throws {
     let home = FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString, directoryHint: .isDirectory)
     let projects = home.appending(path: ".claude/projects", directoryHint: .isDirectory)
@@ -456,10 +456,11 @@ import Foundation
     let statistics = await scanner.scanStatistics()
 
     #expect(snapshot.usage[.codex]?.total == 23)
-    #expect(snapshot.usage[.claude] == nil)
-    #expect(snapshot.usage[.opencode] == nil)
+    #expect(snapshot.usage[.claude]?.total == 12)
+    #expect(snapshot.usage[.opencode] == .zero)
     #expect(snapshot.errors[.claude] == nil)
-    #expect(snapshot.errors[.opencode] == nil)
-    #expect(snapshot.dailyUsage.allSatisfy { Set($0.usage.keys) == [.codex] })
-    #expect(statistics.parsedJSONFiles == 1)
+    #expect(snapshot.errors[.opencode] != nil)
+    #expect(snapshot.dailyUsage.allSatisfy { Set($0.usage.keys) == Set(Tool.allCases) })
+    #expect(snapshot.activeTools == [.claude, .codex])
+    #expect(statistics.parsedJSONFiles == 2)
 }

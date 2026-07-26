@@ -9,7 +9,7 @@
   <a href="README.ko.md">한국어</a>
 </p>
 
-Codex Pulse is a private, local-first macOS desktop accessory built with SwiftUI and AppKit. Its **Usage Overview Panel** and **Task Activity Panel** sit beside the Dock to show local Codex token usage, weekly quota, and recent task status. It reads everything from your Mac and uploads nothing.
+Codex Pulse is a private, local-first macOS desktop accessory built with SwiftUI and AppKit. Its **Usage Overview Panel** and **Task Activity Panel** sit beside the Dock to show local Codex, Claude Code, and OpenCode token usage, the Codex weekly quota, and recent task status. It reads everything from your Mac and uploads nothing.
 
 <p align="center">
   <a href="https://iwecon.github.io/CodexPulse/">
@@ -88,9 +88,9 @@ These are the canonical names used in documentation, requirements, and code disc
 
 ## Features
 
-- Codex is currently the only enabled token-usage source. Claude Code and OpenCode scanners remain implemented but disabled, and can later be re-enabled through `UsageSourcePolicy.enabledTools`.
-- Shows a 14-day usage trend and today's token consumption beside today's date.
-- Shows the Codex weekly quota, remaining percentage, reset time, a remaining-time countdown with graduated detail (including seconds in the final minute), and a daily available percentage based on the exact time remaining.
+- Reads token usage from Codex (`~/.codex`), Claude Code (`~/.claude/projects`), and OpenCode (`~/.local/share/opencode`). A tool appears automatically while it has usage within the visible 14-day window; uninstalled or dormant tools stay hidden without any setting.
+- Shows a 14-day usage trend. With one active tool it keeps a single-color trend beside today's date and consumption; with several, each day's bar stacks per-tool segments in fixed hues whose lightness follows the wallpaper-adaptive text polarity, and a colored-dot legend shows each tool's 14-day total.
+- Shows the Codex weekly quota (local rate-limit data exists only for Codex; the section hides while Codex is dormant), remaining percentage, reset time, a remaining-time countdown with graduated detail (including seconds in the final minute), and a daily available percentage based on the exact time remaining.
 - The Task Activity Panel dynamically fits visible content and is normally at most 120px tall. Starting from the bottom, it groups all active tasks and tasks completed within the last 10 minutes by project and session. Active tasks are never subject to the 10-minute limit and must all remain visible, allowing the panel to exceed 120px when needed; remaining space is filled with completed tasks from newest to oldest. Active tasks use a rotating ring with a gradient trail. Short transitions accompany task insertion and removal and respect Reduce Motion. Messages lose contrast after three completed minutes and disappear after ten; the latest user message is compactly shown in its natural one or two lines.
 - Repositions automatically for bottom, left, and right Dock locations.
 - Each panel independently averages the desktop-wallpaper colors beneath its full region and chooses dark or light text with maximin APCA perceptual contrast (with a hysteresis band that keeps the previous polarity when both are perceptually equivalent). The concrete text color then continues the wallpaper's hue in OKLCh at near-black or near-white lightness, accepted only while it keeps a WCAG contrast ratio of at least 7:1 against every sampled candidate color; otherwise it interpolates toward pure black or white, which remains the fallback whenever the sampled colors are unavailable. AppKit session-title overlays follow the same computed color; the language picker sits on Liquid Glass and follows the semantic appearance. Text keeps one subtle opposite-color shadow and preserves the primary/secondary brightness hierarchy. Panels remain fully transparent, do not capture the screen, and require no Screen Recording permission.
@@ -109,7 +109,7 @@ Codex quota data is selected from the `rate_limits` snapshot with the newest eve
 ## Resource use
 
 - Initial launch reads existing history. JSONL files are parsed line by line in fixed-size chunks and are never expanded into whole-file `Data` and `String` values at once.
-- Codex parsing results are cached per file, so later refreshes parse only new or changed files. The disabled Claude Code and OpenCode implementations retain their own file and database/WAL/SHM caches for incremental scanning if re-enabled.
+- Codex and Claude Code parsing results are cached per file, and OpenCode results per database/WAL/SHM version, so later refreshes parse only new or changed data.
 - Codex task logs are read incrementally from byte cursors. Task-index queries are briefly cached to avoid querying SQLite on every poll.
 - Usage and task refreshes pause while the user session is locked or the display sleeps, and active-task animations freeze for the full interval. They resume immediately after unlock and wake.
 - Equivalent data does not republish SwiftUI state. Countdown, duration, and activity updates are isolated to their smallest leaf views rather than redrawing a whole panel at high frequency.
@@ -152,9 +152,9 @@ Tests cover log parsing, date handling, newest Codex quota selection, task state
 
 ## Data sources
 
-- Codex usage (enabled): `~/.codex/sessions/**/*.jsonl`
+- Codex usage: `~/.codex/sessions/**/*.jsonl` and `~/.codex/archived_sessions/**/*.jsonl`
 - Codex task index: `~/.codex/state_*.sqlite`
-- Claude Code (disabled, entry point retained): `~/.claude/projects/**/*.jsonl`
-- OpenCode (disabled, entry point retained): `~/.local/share/opencode/opencode.db`
+- Claude Code usage: `~/.claude/projects/**/*.jsonl`
+- OpenCode usage: `~/.local/share/opencode/opencode.db`
 
-If an enabled source is missing or cannot be read, only that tool is affected. Codex Pulse never uploads data or modifies original session records. Disabled sources do not access their local files.
+If a source is missing or cannot be read, only that tool is affected. Codex Pulse never uploads data or modifies original session records.

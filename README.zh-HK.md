@@ -9,7 +9,7 @@
   <a href="README.ko.md">한국어</a>
 </p>
 
-Codex Pulse 是以 SwiftUI 與 AppKit 製作的 macOS 桌面輔助程式。Dock 旁的**用量概覽面板**和**任務活動面板**會顯示本機 Codex Token 用量、每週限額及近期任務狀態。所有資料只從 Mac 讀取，絕不上載。
+Codex Pulse 是以 SwiftUI 與 AppKit 製作的 macOS 桌面輔助程式。Dock 旁的**用量概覽面板**和**任務活動面板**會顯示本機 Codex、Claude Code 與 OpenCode 的 Token 用量、Codex 每週限額及近期任務狀態。所有資料只從 Mac 讀取，絕不上載。
 
 <p align="center">
   <a href="https://iwecon.github.io/CodexPulse/">
@@ -72,9 +72,9 @@ codex-pulse install
 
 ## 功能
 
-- 目前只啟用 Codex Token 用量統計。Claude Code 及 OpenCode 掃描器仍保留但預設停用，日後可透過 `UsageSourcePolicy.enabledTools` 重新啟用。
-- 顯示最近 14 日用量趨勢，並在今日日期旁顯示今日 Token 消耗。
-- 顯示 Codex 每週限額、剩餘百分比、重設時間、按剩餘時長分級的倒數（最後一分鐘顯示秒數），以及按精確剩餘時間換算的每日可用百分比。
+- 統計 Codex（`~/.codex`）、Claude Code（`~/.claude/projects`）與 OpenCode（`~/.local/share/opencode`）的 Token 用量。工具在最近 14 日可見範圍內有用量時自動顯示；未安裝或近 14 日未使用的工具會自動隱藏，毋須任何設定。
+- 顯示最近 14 日用量趨勢。只有一個工具活躍時保持單色趨勢，並在今日日期旁顯示今日 Token 消耗；多個工具活躍時，每日棒形按工具堆疊固定色相的分段（亮度跟隨牆紙自適應文字極性），並以彩點圖例顯示各工具的 14 日總量。
+- 顯示 Codex 每週限額（本機限額數據只有 Codex 提供，Codex 近 14 日未使用時會隱藏此區塊）、剩餘百分比、重設時間、按剩餘時長分級的倒數（最後一分鐘顯示秒數），以及按精確剩餘時間換算的每日可用百分比。
 - 任務活動面板按可見內容動態調整高度，通常最高 120px；從底部開始依專案和工作階段顯示所有執行中及最近 10 分鐘完成的任務。執行中任務不受 10 分鐘限制且必須全部顯示，必要時面板可超過 120px；餘下空間再按完成時間由新至舊放入已完成任務。執行中任務使用帶漸變拖尾的旋轉圓環；新增和移除任務有短暫過場並遵從「減少動態效果」設定。完成超過 3 分鐘的訊息會降低對比度，超過 10 分鐘便移除；最新用戶訊息按實際一至兩行緊湊顯示。
 - 自動配合位於底部、左邊或右邊的 Dock 調整位置。
 - 兩個主面板的內容、工作階段標題及專案標題統一使用白字與單一輕微黑影，主要和次要文字仍保留亮度層級。面板完全透明、不擷取畫面，亦不需要「螢幕錄製」權限。
@@ -93,7 +93,7 @@ Codex 限額以工作階段日誌中事件時間最新的 `rate_limits` 快照�
 ## 資源使用
 
 - 首次啟動會讀取現有歷史資料。JSONL 以固定大小分段逐行解析，不會把整個日誌同時展開成 `Data` 和 `String`。
-- Codex 解析結果按檔案快取，之後只重新解析新增或變更的檔案。已停用的 Claude Code 及 OpenCode 仍保留各自的檔案及資料庫/WAL/SHM 快取，重新啟用後繼續增量掃描。
+- Codex 及 Claude Code 的解析結果按檔案快取，OpenCode 按資料庫/WAL/SHM 版本快取，之後只重新解析新增或變更的數據。
 - Codex 任務日誌按位元組游標增量讀取；任務索引查詢會短暫快取，避免每次輪詢 SQLite。
 - 用戶工作階段鎖定或螢幕休眠時，會暫停用量和任務重新整理，並凍結執行中任務動畫；解鎖及喚醒後立即恢復。
 - 相同資料不會重複發佈 SwiftUI 狀態。倒數、任務時長和活動指示只更新所需的小型葉節點檢視，避免整個面板高頻重繪。
@@ -136,9 +136,9 @@ swift test
 
 ## 資料來源
 
-- Codex 用量（已啟用）：`~/.codex/sessions/**/*.jsonl`
+- Codex 用量：`~/.codex/sessions/**/*.jsonl` 及 `~/.codex/archived_sessions/**/*.jsonl`
 - Codex 任務索引：`~/.codex/state_*.sqlite`
-- Claude Code（已停用，保留入口）：`~/.claude/projects/**/*.jsonl`
-- OpenCode（已停用，保留入口）：`~/.local/share/opencode/opencode.db`
+- Claude Code 用量：`~/.claude/projects/**/*.jsonl`
+- OpenCode 用量：`~/.local/share/opencode/opencode.db`
 
-已啟用的資料來源不存在或無法讀取時，只會影響相應工具。Codex Pulse 不會上載資料或修改原始工作階段記錄；已停用來源不會存取其本機檔案。
+資料來源不存在或無法讀取時，只會影響相應工具。Codex Pulse 不會上載資料或修改原始工作階段記錄。
