@@ -357,6 +357,31 @@ import Foundation
     #expect(CodexThreadLink.url(threadID: "thread/with space")?.absoluteString == "codex://threads/thread%2Fwith%20space")
 }
 
+@Test func sessionDeepLinksResumeExactSessionsAndOpenCodeProjects() {
+    #expect(
+        SessionDeepLink.url(tool: .codex, threadID: "thread-1", directory: "/tmp/demo")?.absoluteString
+            == "codex://threads/thread-1"
+    )
+    #expect(
+        SessionDeepLink.url(
+            tool: .claude,
+            threadID: "claude:0197f3a2-1b2c-7d3e-9f40-5a6b7c8d9e0f",
+            directory: ""
+        )?.absoluteString == "claude://resume?session=0197f3a2-1b2c-7d3e-9f40-5a6b7c8d9e0f"
+    )
+    #expect(
+        SessionDeepLink.url(tool: .opencode, threadID: "opencode:s1", directory: "/tmp/My Project")?.absoluteString
+            == "opencode://open-project?directory=/tmp/My%20Project"
+    )
+}
+
+@Test func sessionDeepLinksRejectUnusableIdentifiers() {
+    // The Claude desktop app only imports UUID session IDs.
+    #expect(SessionDeepLink.url(tool: .claude, threadID: "claude:not-a-uuid", directory: "/tmp/demo") == nil)
+    #expect(SessionDeepLink.url(tool: .opencode, threadID: "opencode:s1", directory: "") == nil)
+    #expect(SessionDeepLink.url(tool: .codex, threadID: "thread-1", directory: "") != nil)
+}
+
 @Test func parsesISOAndMillisecondDates() {
     let iso = UsageScanner.date("2026-07-23T10:15:30Z")
     let fractionalISO = UsageScanner.date("2026-07-23T10:15:30.123Z")
@@ -463,4 +488,253 @@ import Foundation
     #expect(snapshot.dailyUsage.allSatisfy { Set($0.usage.keys) == Set(Tool.allCases) })
     #expect(snapshot.activeTools == [.claude, .codex])
     #expect(statistics.parsedJSONFiles == 2)
+}
+
+// MARK: - Claude Code task monitoring
+
+@Test func claudeParseLineRecognizesTurnBoundaries() {
+    let prompt = #"{"type":"user","sessionId":"session-1","cwd":"/Users/i/project/Demo","uuid":"prompt-1","timestamp":"2026-07-26T10:00:00.100Z","message":{"role":"user","content":"修复登录\n问题"}}"#
+    guard case .prompt(let sessionID, let cwd, let uuid, let text, _) = ClaudeTaskMonitor.parseLine(prompt[...]) else {
+        Issue.record("Expected a prompt")
+        return
+    }
+    #expect(sessionID == "session-1")
+    #expect(cwd == "/Users/i/project/Demo")
+    #expect(uuid == "prompt-1")
+    #expect(text == "修复登录\n问题")
+
+    let endTurn = #"{"type":"assistant","sessionId":"session-1","timestamp":"2026-07-26T10:01:00Z","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"完成"}]}}"#
+    guard case .turnEnd = ClaudeTaskMonitor.parseLine(endTurn[...]) else {
+        Issue.record("Expected a turn end")
+        return
+    }
+
+    let interrupt = #"{"type":"user","sessionId":"session-1","uuid":"stop-1","timestamp":"2026-07-26T10:02:00Z","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#
+    guard case .interrupted = ClaudeTaskMonitor.parseLine(interrupt[...]) else {
+        Issue.record("Expected an interruption")
+        return
+    }
+
+    let customTitle = #"{"type":"custom-title","customTitle":"登录修复","sessionId":"session-1"}"#
+    #expect(ClaudeTaskMonitor.parseLine(customTitle[...]) == .customTitle(sessionID: "session-1", title: "登录修复"))
+    let aiTitle = #"{"type":"ai-title","aiTitle":"修复登录问题","sessionId":"session-1"}"#
+    #expect(ClaudeTaskMonitor.parseLine(aiTitle[...]) == .aiTitle(sessionID: "session-1", title: "修复登录问题"))
+}
+
+@Test func claudeParseLineIgnoresNonTaskEntries() {
+    let toolUse = #"{"type":"assistant","sessionId":"s","timestamp":"2026-07-26T10:00:00Z","message":{"stop_reason":"tool_use","content":[{"type":"tool_use"}]}}"#
+    let noStop = #"{"type":"assistant","sessionId":"s","timestamp":"2026-07-26T10:00:00Z","message":{"stop_reason":null,"content":[{"type":"text","text":"…"}]}}"#
+    let toolResult = #"{"type":"user","sessionId":"s","uuid":"u","timestamp":"2026-07-26T10:00:00Z","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}"#
+    let sidechain = #"{"type":"user","isSidechain":true,"sessionId":"s","uuid":"u","timestamp":"2026-07-26T10:00:00Z","message":{"role":"user","content":"子代理提示词"}}"#
+    let meta = #"{"type":"user","isMeta":true,"sessionId":"s","uuid":"u","timestamp":"2026-07-26T10:00:00Z","message":{"role":"user","content":"Caveat: …"}}"#
+    let compact = #"{"type":"user","isCompactSummary":true,"sessionId":"s","uuid":"u","timestamp":"2026-07-26T10:00:00Z","message":{"role":"user","content":"总结"}}"#
+    let command = #"{"type":"user","sessionId":"s","uuid":"u","timestamp":"2026-07-26T10:00:00Z","message":{"role":"user","content":"<command-name>/clear</command-name>"}}"#
+    let queue = #"{"type":"queue-operation","operation":"enqueue","timestamp":"2026-07-26T10:00:00Z","sessionId":"s","content":"排队消息"}"#
+    for line in [toolUse, noStop, toolResult, sidechain, meta, compact, command, queue] {
+        #expect(ClaudeTaskMonitor.parseLine(line[...]) == nil)
+    }
+}
+
+@Test func claudeTaskMonitorTracksTurnLifecycleFromTranscript() async throws {
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let project = home.appending(path: ".claude/projects/-Users-i-project-Demo", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+    let file = project.appending(path: "session-1.jsonl")
+
+    func append(_ lines: [String]) throws {
+        let data = (lines.joined(separator: "\n") + "\n").data(using: .utf8)!
+        if FileManager.default.fileExists(atPath: file.path) {
+            let handle = try FileHandle(forWritingTo: file)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: data)
+        } else {
+            try data.write(to: file)
+        }
+    }
+
+    let start = try Date("2026-07-26T10:00:00Z", strategy: .iso8601)
+    try append([
+        #"{"type":"user","sessionId":"session-1","cwd":"/Users/i/project/Demo","uuid":"prompt-1","timestamp":"2026-07-26T10:00:00Z","message":{"role":"user","content":"修复登录问题"}}"#,
+        #"{"type":"assistant","sessionId":"session-1","timestamp":"2026-07-26T10:00:10Z","message":{"stop_reason":"tool_use","content":[{"type":"tool_use"}]}}"#,
+    ])
+
+    let monitor = ClaudeTaskMonitor(home: home)
+    var tasks = await monitor.scan(now: start.addingTimeInterval(30))
+    #expect(tasks.count == 1)
+    #expect(tasks.first?.tool == .claude)
+    #expect(tasks.first?.threadID == "claude:session-1")
+    #expect(tasks.first?.isCompleted == false)
+    #expect(tasks.first?.latestUserMessage == "修复登录问题")
+    #expect(tasks.first?.projectName == "Demo")
+    #expect(tasks.first?.title == "修复登录问题")
+
+    // A queued prompt updates the running task; an AI title renames the session.
+    try append([
+        #"{"type":"ai-title","aiTitle":"登录问题修复","sessionId":"session-1"}"#,
+        #"{"type":"user","sessionId":"session-1","cwd":"/Users/i/project/Demo","uuid":"prompt-2","timestamp":"2026-07-26T10:01:00Z","message":{"role":"user","content":"顺便更新文档"}}"#,
+    ])
+    tasks = await monitor.scan(now: start.addingTimeInterval(70))
+    #expect(tasks.count == 1)
+    #expect(tasks.first?.latestUserMessage == "顺便更新文档")
+    #expect(tasks.first?.title == "登录问题修复")
+
+    try append([
+        #"{"type":"assistant","sessionId":"session-1","timestamp":"2026-07-26T10:03:00Z","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"完成"}]}}"#,
+    ])
+    tasks = await monitor.scan(now: start.addingTimeInterval(200))
+    #expect(tasks.count == 1)
+    #expect(tasks.first?.isCompleted == true)
+    #expect(tasks.first?.completedAt == start.addingTimeInterval(180))
+
+    // A fresh prompt starts a second task in the same session.
+    try append([
+        #"{"type":"user","sessionId":"session-1","cwd":"/Users/i/project/Demo","uuid":"prompt-3","timestamp":"2026-07-26T10:04:00Z","message":{"role":"user","content":"再跑一次测试"}}"#,
+    ])
+    tasks = await monitor.scan(now: start.addingTimeInterval(250))
+    #expect(tasks.count == 2)
+    #expect(tasks.filter { !$0.isCompleted }.count == 1)
+
+    // Interruption removes the running task.
+    try append([
+        #"{"type":"user","sessionId":"session-1","uuid":"stop-1","timestamp":"2026-07-26T10:05:00Z","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#,
+    ])
+    tasks = await monitor.scan(now: start.addingTimeInterval(310))
+    #expect(tasks.count == 1)
+    #expect(tasks.filter { !$0.isCompleted }.isEmpty)
+}
+
+@Test func claudeRunningTaskGoesStaleAfterSilenceButSurvivesTranscriptGrowth() async throws {
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let project = home.appending(path: ".claude/projects/-Users-i-project-Demo", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+    let file = project.appending(path: "session-1.jsonl")
+    let start = try Date("2026-07-26T10:00:00Z", strategy: .iso8601)
+
+    let line = #"{"type":"user","sessionId":"session-1","cwd":"/Users/i/project/Demo","uuid":"prompt-1","timestamp":"2026-07-26T10:00:00Z","message":{"role":"user","content":"修复登录问题"}}"#
+    try (line + "\n").data(using: .utf8)!.write(to: file)
+    try FileManager.default.setAttributes([.modificationDate: start], ofItemAtPath: file.path)
+
+    let monitor = ClaudeTaskMonitor(home: home)
+    var tasks = await monitor.scan(now: start.addingTimeInterval(30))
+    #expect(tasks.count == 1)
+
+    // Tool traffic appends unparsed lines without any task event: the
+    // transcript keeps growing, so the running turn must stay alive.
+    let toolNoise = #"{"type":"assistant","sessionId":"session-1","timestamp":"2026-07-26T10:11:00Z","message":{"stop_reason":"tool_use","content":[{"type":"tool_use"}]}}"#
+    let handle = try FileHandle(forWritingTo: file)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: (toolNoise + "\n").data(using: .utf8)!)
+    try handle.close()
+    let grown = start.addingTimeInterval(11 * 60)
+    try FileManager.default.setAttributes([.modificationDate: grown], ofItemAtPath: file.path)
+
+    tasks = await monitor.scan(now: start.addingTimeInterval(13 * 60))
+    #expect(tasks.count == 1)
+
+    // Silence past the stale interval with no further growth drops the turn.
+    tasks = await monitor.scan(now: grown.addingTimeInterval(ClaudeTaskMonitor.runningStaleInterval + 60))
+    #expect(tasks.isEmpty)
+}
+
+// MARK: - OpenCode task monitoring
+
+private func openCodeRow(
+    id: String,
+    role: String,
+    parent: String? = nil,
+    finish: String? = nil,
+    created: TimeInterval,
+    completed: TimeInterval? = nil
+) -> OpenCodeTaskMonitor.MessageRow {
+    OpenCodeTaskMonitor.MessageRow(
+        id: id,
+        role: role,
+        parentID: parent,
+        finish: finish,
+        created: Date(timeIntervalSince1970: created),
+        completed: completed.map(Date.init(timeIntervalSince1970:))
+    )
+}
+
+@Test func openCodeTurnIsRunningWhileAnAssistantStepIsIncomplete() {
+    let rows = [
+        openCodeRow(id: "user-1", role: "user", created: 100),
+        openCodeRow(id: "a-1", role: "assistant", parent: "user-1", finish: "tool-calls", created: 101, completed: 105),
+        openCodeRow(id: "a-2", role: "assistant", parent: "user-1", created: 105),
+    ]
+    let tasks = OpenCodeTaskMonitor.turnTasks(
+        sessionID: "ses_1",
+        title: "登录修复",
+        projectName: "Demo",
+        rows: rows,
+        prompts: ["user-1": "修复登录问题"]
+    )
+    #expect(tasks.count == 1)
+    #expect(tasks.first?.tool == .opencode)
+    #expect(tasks.first?.threadID == "opencode:ses_1")
+    #expect(tasks.first?.isCompleted == false)
+    #expect(tasks.first?.latestUserMessage == "修复登录问题")
+    #expect(tasks.first?.startedAt == Date(timeIntervalSince1970: 100))
+}
+
+@Test func openCodeTurnCompletesOnStopAndDropsAbortedTurns() {
+    let completedRows = [
+        openCodeRow(id: "user-1", role: "user", created: 100),
+        openCodeRow(id: "a-1", role: "assistant", parent: "user-1", finish: "stop", created: 101, completed: 130),
+    ]
+    let completed = OpenCodeTaskMonitor.turnTasks(
+        sessionID: "ses_1", title: "", projectName: "Demo", rows: completedRows, prompts: [:]
+    )
+    #expect(completed.first?.completedAt == Date(timeIntervalSince1970: 130))
+    #expect(completed.first?.title == "OpenCode")
+
+    let abortedRows = [
+        openCodeRow(id: "user-1", role: "user", created: 100),
+        openCodeRow(id: "a-1", role: "assistant", parent: "user-1", finish: "unknown", created: 101, completed: 110),
+    ]
+    let aborted = OpenCodeTaskMonitor.turnTasks(
+        sessionID: "ses_1", title: "t", projectName: "Demo", rows: abortedRows, prompts: [:]
+    )
+    #expect(aborted.isEmpty)
+}
+
+@Test func openCodeOnlyTheLatestUnansweredPromptWaits() {
+    let rows = [
+        openCodeRow(id: "user-1", role: "user", created: 100),
+        openCodeRow(id: "user-2", role: "user", created: 200),
+    ]
+    let tasks = OpenCodeTaskMonitor.turnTasks(
+        sessionID: "ses_1", title: "t", projectName: "Demo", rows: rows, prompts: [:]
+    )
+    #expect(tasks.map(\.id) == ["opencode:user-2"])
+    #expect(tasks.first?.isCompleted == false)
+}
+
+@Test func openCodeMessageRowParsesMillisecondTimes() {
+    let row = OpenCodeTaskMonitor.messageRow(id: "a-1", data: [
+        "role": "assistant",
+        "parentID": "user-1",
+        "finish": "stop",
+        "time": ["created": 1_785_000_000_123, "completed": 1_785_000_009_456],
+    ])
+    #expect(row?.parentID == "user-1")
+    #expect(row?.created == Date(timeIntervalSince1970: 1_785_000_000.123))
+    #expect(row?.completed == Date(timeIntervalSince1970: 1_785_000_009.456))
+}
+
+@Test func mergedToolTasksShareOneDisplayOrder() {
+    let base = Date(timeIntervalSince1970: 1_780_000_000)
+    let codex = TaskExecution(id: "turn-1", threadID: "thread-1", title: "Codex", startedAt: base.addingTimeInterval(20))
+    let claude = TaskExecution(id: "claude:u1", threadID: "claude:s1", tool: .claude, title: "Claude", startedAt: base.addingTimeInterval(10))
+    let opencode = TaskExecution(
+        id: "opencode:m1", threadID: "opencode:ses1", tool: .opencode, title: "OpenCode",
+        startedAt: base, completedAt: base.addingTimeInterval(5)
+    )
+    let merged = TaskMonitor.sortedForDisplay([codex, claude, opencode])
+    #expect(merged.map(\.id) == ["opencode:m1", "claude:u1", "turn-1"])
 }

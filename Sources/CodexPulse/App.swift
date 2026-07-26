@@ -92,6 +92,8 @@ final class UsageModel {
     private(set) var isTaskStatusAnimationPaused = false
     private let scanner = UsageScanner()
     private let taskMonitor = TaskMonitor()
+    private let claudeTaskMonitor = ClaudeTaskMonitor()
+    private let openCodeTaskMonitor = OpenCodeTaskMonitor()
     private var started = false
     private var refreshGate = RefreshActivityGate()
     private var usageLoopTask: Task<Void, Never>?
@@ -160,7 +162,12 @@ final class UsageModel {
     private func runTaskLoop() async {
         while !Task.isCancelled {
             guard refreshGate.allowsRefresh else { return }
-            let newTasks = await taskMonitor.scan()
+            async let codexTasks = taskMonitor.scan()
+            async let claudeTasks = claudeTaskMonitor.scan()
+            async let openCodeTasks = openCodeTaskMonitor.scan()
+            let newTasks = TaskMonitor.sortedForDisplay(
+                await codexTasks + claudeTasks + openCodeTasks
+            )
             guard !Task.isCancelled, refreshGate.allowsRefresh else { return }
             if newTasks != tasks { tasks = newTasks }
             do {
@@ -200,6 +207,7 @@ final class DockPanelController {
     private let model: UsageModel
     private let presentationState: DockPanelPresentationState
     private let languageSettings: AppLanguageSettings
+    private let barColorSettings: ToolBarColorSettings
     private let defaults: UserDefaults
     private var placementTimer: Timer?
     private var arrangement: PanelArrangement
@@ -228,6 +236,12 @@ final class DockPanelController {
     private var lastLoggedWallpaperSourceSummary: String?
     #endif
     private lazy var sessionLinkController = CodexSessionLinkController()
+    private lazy var barColorSettingsWindowController = BarColorSettingsWindowController(
+        settings: barColorSettings,
+        presentation: presentationState,
+        languageSettings: languageSettings,
+        usagePanelFrame: { [weak self] in self?.leftPanel.frame }
+    )
     private lazy var resizeController = DockPanelResizeController(
         panelFrame: { [weak self] identity in
             guard let self else { return .zero }
@@ -255,7 +269,7 @@ final class DockPanelController {
             let tools = model.snapshot.activeTools
             guard tools.count > 1 else { return [] }
             return tools.map { tool in
-                let rgb = AdaptiveTextColor.barColor(
+                let rgb = barColorSettings.barColor(
                     for: tool,
                     appearance: presentationState.usageAppearance
                 )
@@ -283,6 +297,9 @@ final class DockPanelController {
         onManagePermissions: { [weak self] _ in
             self?.managePhotoLibraryPermission()
         },
+        onCustomizeBarColors: { [weak self] _ in
+            self?.barColorSettingsWindowController.show()
+        },
         onDragBegan: { [weak self] identity, mouseX in
             self?.beginResize(identity, mouseX: mouseX)
         },
@@ -304,6 +321,8 @@ final class DockPanelController {
         self.defaults = defaults
         let languageSettings = AppLanguageSettings(defaults: defaults)
         self.languageSettings = languageSettings
+        let barColorSettings = ToolBarColorSettings(defaults: defaults)
+        self.barColorSettings = barColorSettings
         arrangement = preferences.arrangement
         usageOverviewPreferredWidth = preferences.usageOverviewPreferredWidth
         taskActivityPreferredWidth = preferences.taskActivityPreferredWidth
@@ -317,7 +336,8 @@ final class DockPanelController {
             rootView: AnyView(RecentUsageView(
                 model: model,
                 presentation: presentationState,
-                languageSettings: languageSettings
+                languageSettings: languageSettings,
+                barColorSettings: barColorSettings
             )),
             size: NSSize(width: preferences.usageOverviewPreferredWidth, height: 56)
         )
@@ -325,7 +345,8 @@ final class DockPanelController {
             rootView: AnyView(TaskExecutionView(
                 model: model,
                 presentation: presentationState,
-                languageSettings: languageSettings
+                languageSettings: languageSettings,
+                barColorSettings: barColorSettings
             )),
             size: NSSize(width: preferences.taskActivityPreferredWidth, height: taskPlan.panelHeight)
         )
@@ -368,6 +389,7 @@ final class DockPanelController {
             MainActor.assumeIsolated { self?.positionPanels() }
         }
         observeTaskChanges()
+        observeBarColorChanges()
         positionPanels()
         leftPanel.orderFrontRegardless()
         rightPanel.orderFrontRegardless()
@@ -760,6 +782,20 @@ final class DockPanelController {
         }
     }
 
+    /// Keeps the AppKit legend in a visible control group in sync with color
+    /// edits; the SwiftUI panels observe the settings directly.
+    private func observeBarColorChanges() {
+        withObservationTracking {
+            _ = barColorSettings.preference
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                resizeController.refreshVisibleOverlay()
+                observeBarColorChanges()
+            }
+        }
+    }
+
     private func panel(for identity: DockPanelIdentity) -> NSPanel {
         switch identity {
         case .usageOverview: leftPanel
@@ -913,6 +949,7 @@ struct RecentUsageView: View {
     @Bindable var model: UsageModel
     let presentation: DockPanelPresentationState
     @Bindable var languageSettings: AppLanguageSettings
+    let barColorSettings: ToolBarColorSettings
     private var days: [DailyUsage] { model.snapshot.dailyUsage }
     private var maximum: Int { max(days.map(\.total).max() ?? 0, 1) }
     private var total: Int { days.reduce(0) { $0 + $1.total } }
@@ -1008,10 +1045,20 @@ struct RecentUsageView: View {
             .frame(maxWidth: .infinity)
         } else {
             RoundedRectangle(cornerRadius: 1.5)
-                .fill(day.total == 0 ? Color.secondary.opacity(0.16) : Color.accentColor.opacity(0.38 + 0.62 * Double(day.total) / Double(maximum)))
+                .fill(day.total == 0 ? Color.secondary.opacity(0.16) : singleToolAccent.opacity(0.38 + 0.62 * Double(day.total) / Double(maximum)))
                 .frame(maxWidth: .infinity)
                 .frame(height: height)
         }
+    }
+
+    /// Single-tool trend ramp color: the sole active tool's custom color when
+    /// the user chose one, otherwise the original accent ramp.
+    private var singleToolAccent: Color {
+        guard let tool = activeTools.first,
+              let custom = barColorSettings.customColor(for: tool) else {
+            return .accentColor
+        }
+        return Color(custom)
     }
 
     private var legendView: some View {
@@ -1051,9 +1098,9 @@ struct RecentUsageView: View {
     }
 
     private func barColor(for tool: Tool) -> Color {
-        Color(AdaptiveTextColor.barColor(
+        Color(barColorSettings.barColor(
             for: tool,
-            appearance: presentation.usageAppearance == .dark ? .dark : .light
+            appearance: presentation.usageAppearance
         ))
     }
 }
@@ -1203,10 +1250,13 @@ struct TaskExecutionView: View {
     @Bindable var model: UsageModel
     let presentation: DockPanelPresentationState
     @Bindable var languageSettings: AppLanguageSettings
+    let barColorSettings: ToolBarColorSettings
 
     private struct TaskStatusIndicator: View {
         let isCompleted: Bool
         let isAnimationPaused: Bool
+        /// The session's tool usage-bar color, including any user override.
+        let sessionColor: Color
         let language: AppLanguage
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1215,7 +1265,7 @@ struct TaskExecutionView: View {
                 if isCompleted {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(.green)
+                        .foregroundStyle(sessionColor)
                 } else {
                     loadingRing
                 }
@@ -1239,9 +1289,9 @@ struct TaskExecutionView: View {
                     .stroke(
                         AngularGradient(
                             stops: [
-                                .init(color: Color.accentColor.opacity(0.08), location: 0),
-                                .init(color: Color.accentColor.opacity(0.4), location: 0.55),
-                                .init(color: Color.accentColor, location: 1)
+                                .init(color: sessionColor.opacity(0.08), location: 0),
+                                .init(color: sessionColor.opacity(0.4), location: 0.55),
+                                .init(color: sessionColor, location: 1)
                             ],
                             center: .center,
                             startAngle: .degrees(0),
@@ -1347,6 +1397,10 @@ struct TaskExecutionView: View {
                                 alignment: alignTrailing ? .trailing : .leading
                             )
                         ForEach(project.sessions) { session in
+                            let sessionColor = Color(barColorSettings.barColor(
+                                for: session.tool,
+                                appearance: presentation.taskAppearance
+                            ))
                             Text("# \(session.name)")
                                 .dockPanelTextShadow()
                                 .font(.system(size: 8, weight: .semibold))
@@ -1369,12 +1423,14 @@ struct TaskExecutionView: View {
                                         TaskStatusIndicator(
                                             isCompleted: task.isCompleted,
                                             isAnimationPaused: model.isTaskStatusAnimationPaused,
+                                            sessionColor: sessionColor,
                                             language: languageSettings.language
                                         )
                                     } else {
                                         TaskStatusIndicator(
                                             isCompleted: task.isCompleted,
                                             isAnimationPaused: model.isTaskStatusAnimationPaused,
+                                            sessionColor: sessionColor,
                                             language: languageSettings.language
                                         )
                                         TaskMessageText(task: task, textAlignment: .leading)

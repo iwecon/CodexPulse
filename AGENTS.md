@@ -7,7 +7,7 @@ Codex Pulse is a Swift Package Manager macOS 26+ accessory app. It renders two n
 ## Panel terminology
 
 - **Usage Overview Panel** (`用量概览面板`): the functionally named panel that shows the 14-day token-usage trend and Codex weekly limit. It is on the left when the Dock is at the bottom and above the other panel when the Dock is vertical.
-- **Task Activity Panel** (`任务活动面板`): the functionally named panel that shows active and recently completed Codex tasks grouped by project and session. It is on the right when the Dock is at the bottom and below the other panel when the Dock is vertical.
+- **Task Activity Panel** (`任务活动面板`): the functionally named panel that shows active and recently completed Codex, Claude Code, and OpenCode tasks grouped by project and session. It is on the right when the Dock is at the bottom and below the other panel when the Dock is vertical.
 
 Use these canonical names in documentation, requirements, code review, and new symbol names. Use “left/right panel” or “upper/lower panel” only when discussing physical placement; panel identity does not change with Dock orientation. Existing `leftPanel` and `rightPanel` symbols are positional legacy names for the Usage Overview Panel and Task Activity Panel, respectively.
 
@@ -23,13 +23,16 @@ Run the full test suite after changing panel text rendering, wallpaper sampling 
 ## Source map
 
 - `Sources/CodexPulse/App.swift`: app lifecycle, shared model, Dock panel placement, and SwiftUI views.
-- `Sources/CodexPulse/CodexSessionLink.swift`: clickable Codex session-title windows and their matching adaptive-foreground shadow rendering.
+- `Sources/CodexPulse/CodexSessionLink.swift`: session-title overlay windows and their matching adaptive-foreground shadow rendering; Codex titles deep-link into ChatGPT, other tools' titles render as click-through text.
 - `Sources/CodexPulse/DockPanelResizing.swift`: panel arrangement and persistence, placement geometry, window levels, pointer dwell, resizing, and interaction controls.
 - `Sources/CodexPulse/RefreshActivityGate.swift`: composable refresh suspension for inactive sessions and sleeping displays.
 - `Sources/CodexPulse/UsageScanner.swift`: local Claude Code, Codex, and OpenCode usage scanning.
-- `Sources/CodexPulse/TaskMonitor.swift`: Codex task-event parsing and visible-task selection.
+- `Sources/CodexPulse/TaskMonitor.swift`: Codex task-event parsing, visible-task selection, and the shared display order for merged per-tool task lists.
+- `Sources/CodexPulse/ClaudeTaskMonitor.swift`: Claude Code turn inference from session transcripts (prompt starts a turn, non-`tool_use` stop reason ends it, interrupt markers abort it, transcript growth counts as activity).
+- `Sources/CodexPulse/OpenCodeTaskMonitor.swift`: OpenCode turn inference from its SQLite database (user message plus `parentID`-linked assistant messages; `finish` and completion times decide the state).
 - `Sources/CodexPulse/TaskExecutionLayout.swift`: shared task grouping, visible-row selection, and dynamic panel-height planning.
 - `Sources/CodexPulse/Models.swift`: usage, rate-window, daily-usage, task, snapshot, and pricing models.
+- `Sources/CodexPulse/ToolBarColorSettings.swift`: per-tool usage-bar color overrides — hex persistence, resolution against the built-in adaptive colors, and the floating color-settings window opened from the Usage Overview Panel control group.
 - `Sources/CodexPulse/LaunchAtLoginManager.swift`: login startup eligibility and `SMAppService` registration for release app bundles.
 - `Sources/CodexPulse/WallpaperAppearance.swift`: wallpaper geometry, candidate sampling, Store directory monitoring, semantic appearance selection, refresh tracking, and decoded-asset caching.
 - `Sources/CodexPulse/WallpaperSourceResolver.swift`: typed local wallpaper-source resolution from Store selections, including solid, file-backed, video, Aerial, supported dynamic, and unavailable sources.
@@ -37,12 +40,14 @@ Run the full test suite after changing panel text rendering, wallpaper sampling 
 - `Tests/CodexPulseTests/LaunchAtLoginManagerTests.swift`: launch-at-login eligibility regression tests.
 - `Tests/CodexPulseTests/ParserTests.swift`: parser and behavior regression tests.
 - `Tests/CodexPulseTests/RefreshActivityGateTests.swift`: multi-reason refresh suspension and task-animation pause regression tests.
+- `Tests/CodexPulseTests/ToolBarColorTests.swift`: bar-color hex serialization, persistence, and override-resolution regression tests.
 - `Tests/CodexPulseTests/WallpaperAppearanceTests.swift`: wallpaper mapping, appearance selection, refresh tracking, and decoded-orientation regression tests.
 
 ## Implementation constraints
 
 - Keep every usage source enabled in `UsageSourcePolicy.enabledTools`; visibility is decided per tool by `Snapshot.activeTools` (usage inside the visible 14-day window), not by settings. Do not add a user-facing source toggle unless a future product requirement explicitly calls for one.
-- The multi-tool trend renders stacked per-tool segments with fixed OKLab hues (`Tool.barHueDegrees`; a `nil` hue renders achromatic, used for OpenCode's monochrome brand) whose lightness follows the panel's text polarity via `AdaptiveTextColor.barColor`. With one or zero active tools the trend keeps the single-color accent ramp and the date row; with several it shows the per-tool legend instead.
+- The multi-tool trend renders stacked per-tool segments with fixed OKLab hues (`Tool.barHueDegrees`; a `nil` hue renders achromatic, used for OpenCode's monochrome brand) whose lightness follows the panel's text polarity via `AdaptiveTextColor.barColor`. With one or zero active tools the trend keeps the single-color accent ramp and the date row; with several it shows the per-tool legend instead. Users may override any tool's bar color from the Usage Overview Panel control group's color button (`ToolBarColorSettings`): an override is a fixed color used in both panel appearances, persisted as `#RRGGBB` in local `UserDefaults`, resettable per tool or all at once, and recolors the stacked segments, both legends, the single-tool accent ramp, and the Codex quota bar.
+- Task Activity Panel status indicators (running ring and completion checkmark) are colored per session: `AdaptiveTextColor.sessionHueDegrees` derives a stable OKLab hue from the thread ID (FNV-1a, quantized to 12 hues) and `sessionStatusColor` renders it with the same polarity-adaptive lightness as trend-bar colors. Keep the hue deterministic across launches so a session never changes color.
 - The weekly-limit section remains Codex-only: local rate-limit data exists only in Codex rollout files (Claude Code does not persist quota data locally). Hide the section when Codex is dormant; keep it as the empty-state anchor when no tool is active.
 - Keep all source-data access read-only. Never rewrite or delete files under `~/.claude`, `~/.codex`, or `~/.local/share/opencode`.
 - Preserve actor isolation for `UsageScanner` and `TaskMonitor`; UI mutations remain on `MainActor`.
@@ -51,6 +56,8 @@ Run the full test suite after changing panel text rendering, wallpaper sampling 
 - Preserve per-file Claude/Codex scan caches. Unchanged files must reuse cached aggregates; changed, new, and removed files must invalidate or remove only their own cache entries. Do not restore periodic full-history parsing.
 - OpenCode scan caching must account for the SQLite database and its WAL/SHM companions so read-only caching never hides new writes.
 - Keep task-event monitoring incremental from the last byte offset. Bound incomplete-line buffers and discard cursors and pending state for threads that leave the monitored set.
+- The Task Activity Panel merges tasks from all three tools through `TaskMonitor.sortedForDisplay`. Claude Code and OpenCode have no explicit task events: their turn boundaries are inferred from local session records, and a running turn whose session shows no activity past the monitor's stale interval (slightly above the ten-minute Bash tool-call ceiling) is dropped. For Claude Code, transcript byte growth counts as activity even when the appended lines parse to no events — do not judge liveness by parsed events alone.
+- Only Codex session titles are clickable deep links; Claude Code and OpenCode session titles must stay click-through like the rest of the panel content.
 - Avoid publishing equivalent snapshots or task arrays to the observable UI model. Time-based updates must stay in the smallest leaf view that needs them; do not wrap an entire panel in a high-frequency `TimelineView`.
 - Treat polling and animation rates as a performance budget. The task activity indicator should not exceed 12 FPS and idle pointer polling should not exceed 4 Hz without new profiling evidence and a documented reason.
 - Codex rate limits must be selected by the event observation timestamp, not filesystem enumeration order. Older session files must never overwrite a newer `rate_limits` snapshot.

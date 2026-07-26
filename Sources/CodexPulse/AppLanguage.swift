@@ -109,6 +109,56 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    var customizeBarColors: String {
+        switch self {
+        case .simplifiedChineseMainland: "自定义用量配色"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "自訂用量配色"
+        case .japanese: "使用量の配色をカスタマイズ"
+        case .korean: "사용량 색상 사용자 지정"
+        case .english: "Customize usage colors"
+        }
+    }
+
+    var barColorSettingsTitle: String {
+        switch self {
+        case .simplifiedChineseMainland: "用量配色"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "用量配色"
+        case .japanese: "使用量の配色"
+        case .korean: "사용량 색상"
+        case .english: "Usage Colors"
+        }
+    }
+
+    var barColorSettingsExplanation: String {
+        switch self {
+        case .simplifiedChineseMainland: "为每个产品选择用量趋势与图例使用的颜色。"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "為每個產品選擇用量趨勢與圖例使用的顏色。"
+        case .japanese: "各プロダクトの使用量トレンドと凡例の色を選択します。"
+        case .korean: "각 제품의 사용량 추이와 범례에 사용할 색상을 선택합니다."
+        case .english: "Choose the color used by each product's usage trend and legend."
+        }
+    }
+
+    var resetColor: String {
+        switch self {
+        case .simplifiedChineseMainland: "恢复默认"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "還原預設"
+        case .japanese: "デフォルトに戻す"
+        case .korean: "기본값 복원"
+        case .english: "Reset"
+        }
+    }
+
+    var resetAllColors: String {
+        switch self {
+        case .simplifiedChineseMainland: "全部恢复默认"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "全部還原預設"
+        case .japanese: "すべてデフォルトに戻す"
+        case .korean: "모두 기본값 복원"
+        case .english: "Reset All"
+        }
+    }
+
     var photoPermissionTitle: String {
         switch self {
         case .simplifiedChineseMainland: "照片图库权限"

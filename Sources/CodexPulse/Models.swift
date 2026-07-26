@@ -5,6 +5,9 @@ enum Tool: String, CaseIterable, Identifiable, Sendable {
     case codex = "Codex / ChatGPT"
     case opencode = "OpenCode"
     var id: Self { self }
+    /// Stable identifier for `UserDefaults` keys; the raw value is a display
+    /// name and must never leak into persistence.
+    var settingsKey: String { switch self { case .claude: "claude"; case .codex: "codex"; case .opencode: "opencode" } }
     var symbol: String { switch self { case .claude: "brain.head.profile"; case .codex: "terminal"; case .opencode: "chevron.left.forwardslash.chevron.right" } }
     /// OKLab hue distinguishing this tool's trend-bar segments and legend dot.
     /// `nil` renders achromatic — OpenCode's monochrome brand shows as white
@@ -64,8 +67,15 @@ struct TaskExecution: Identifiable, Sendable, Equatable {
 
     let id: String
     let threadID: String
+    /// Source application of this task, selecting the session deep link
+    /// style: Codex and Claude Code resume their exact session, OpenCode
+    /// jumps to the session's project directory.
+    var tool: Tool = .codex
     var title: String
     var projectName = ""
+    /// Absolute project directory backing OpenCode's directory-based deep
+    /// link; empty when the source never reported one.
+    var directory = ""
     var latestUserMessage = ""
     let startedAt: Date
     var completedAt: Date?

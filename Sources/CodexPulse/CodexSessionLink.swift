@@ -16,6 +16,53 @@ enum CodexThreadLink {
     }
 }
 
+/// Deep link opened by clicking a session title. Codex resumes the exact
+/// thread (`codex://threads/…`); Claude Code resumes the exact session in
+/// the Claude desktop app, which imports the CLI transcript
+/// (`claude://resume?session=…`); OpenCode defines no session-resume link,
+/// so its titles front the session's project (`opencode://open-project?directory=…`).
+enum SessionDeepLink {
+    static func url(tool: Tool, threadID: String, directory: String) -> URL? {
+        switch tool {
+        case .codex:
+            CodexThreadLink.url(threadID: threadID)
+        case .claude:
+            claudeResumeURL(threadID: threadID)
+        case .opencode:
+            directoryURL(scheme: "opencode", host: "open-project", parameter: "directory", directory: directory)
+        }
+    }
+
+    /// The desktop app only imports UUID session IDs and silently drops
+    /// anything else, so a malformed ID renders a non-interactive title.
+    private static func claudeResumeURL(threadID: String) -> URL? {
+        let prefix = "claude:"
+        let sessionID = threadID.hasPrefix(prefix)
+            ? String(threadID.dropFirst(prefix.count))
+            : threadID
+        guard UUID(uuidString: sessionID) != nil else { return nil }
+        var components = URLComponents()
+        components.scheme = "claude"
+        components.host = "resume"
+        components.queryItems = [URLQueryItem(name: "session", value: sessionID)]
+        return components.url
+    }
+
+    private static func directoryURL(
+        scheme: String,
+        host: String,
+        parameter: String,
+        directory: String
+    ) -> URL? {
+        guard !directory.isEmpty else { return nil }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = host
+        components.queryItems = [URLQueryItem(name: parameter, value: directory)]
+        return components.url
+    }
+}
+
 @MainActor
 final class CodexSessionLinkController {
     private var panels: [String: NSPanel] = [:]
@@ -60,25 +107,34 @@ final class CodexSessionLinkController {
         }
 
         for link in links {
-            let panel = panels[link.id] ?? makePanel(
+            let url = SessionDeepLink.url(
+                tool: link.tool,
                 threadID: link.threadID,
+                directory: link.directory
+            )
+            let panel = panels[link.id] ?? makePanel(
+                url: url,
                 title: link.title,
                 language: language,
                 textAlignment: textAlignment
             )
             panels[link.id] = panel
             (panel.contentView as? CodexSessionLinkView)?.update(
+                url: url,
                 title: link.title,
                 language: language,
                 textAlignment: textAlignment
             )
+            // Sessions without a deep link stay click-through like the rest
+            // of the panel content.
+            panel.ignoresMouseEvents = url == nil
             panel.setFrame(link.frame.offsetBy(dx: taskPanelFrame.minX, dy: taskPanelFrame.minY), display: true)
             panel.orderFrontRegardless()
         }
     }
 
     private func makePanel(
-        threadID: String,
+        url: URL?,
         title: String,
         language: AppLanguage,
         textAlignment: TaskActivityTextAlignment
@@ -90,7 +146,7 @@ final class CodexSessionLinkController {
             defer: false
         )
         panel.contentView = CodexSessionLinkView(
-            threadID: threadID,
+            url: url,
             title: title,
             language: language,
             textAlignment: textAlignment,
@@ -103,7 +159,7 @@ final class CodexSessionLinkController {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
-        panel.ignoresMouseEvents = false
+        panel.ignoresMouseEvents = url == nil
         panel.hidesOnDeactivate = false
         panel.level = DockPanelWindowLevel.sessionLink
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
@@ -114,7 +170,8 @@ final class CodexSessionLinkController {
 }
 
 final class CodexSessionLinkView: NSView {
-    private let threadID: String
+    /// Deep link opened on click; `nil` renders a non-interactive title.
+    private var url: URL?
     private var title: String
     private var language: AppLanguage
     private var textAlignment: TaskActivityTextAlignment
@@ -132,14 +189,14 @@ final class CodexSessionLinkView: NSView {
     }
 
     init(
-        threadID: String,
+        url: URL?,
         title: String,
         language: AppLanguage,
         textAlignment: TaskActivityTextAlignment,
         semanticAppearance: PanelSemanticAppearance,
         textColor: WallpaperRGB? = nil
     ) {
-        self.threadID = threadID
+        self.url = url
         self.title = title
         self.language = language
         self.textAlignment = textAlignment
@@ -147,7 +204,7 @@ final class CodexSessionLinkView: NSView {
         self.textColor = textColor
         super.init(frame: .zero)
         setAccessibilityElement(true)
-        setAccessibilityRole(.link)
+        setAccessibilityRole(url == nil ? .staticText : .link)
         updateAccessibility()
     }
 
@@ -159,16 +216,21 @@ final class CodexSessionLinkView: NSView {
     override var isFlipped: Bool { true }
 
     func update(
+        url: URL?,
         title: String,
         language: AppLanguage,
         textAlignment: TaskActivityTextAlignment
     ) {
-        guard self.title != title
+        guard self.url != url
+                || self.title != title
                 || self.language != language
                 || self.textAlignment != textAlignment else { return }
+        self.url = url
         self.title = title
         self.language = language
         self.textAlignment = textAlignment
+        setAccessibilityRole(url == nil ? .staticText : .link)
+        window?.invalidateCursorRects(for: self)
         updateAccessibility()
         needsDisplay = true
     }
@@ -204,18 +266,19 @@ final class CodexSessionLinkView: NSView {
     }
 
     override func resetCursorRects() {
+        guard url != nil else { return }
         addCursorRect(bounds, cursor: .pointingHand)
     }
 
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { url != nil }
 
     override func mouseDown(with event: NSEvent) {
-        guard let url = CodexThreadLink.url(threadID: threadID) else { return }
+        guard let url else { return }
         NSWorkspace.shared.open(url)
     }
 
     private func updateAccessibility() {
-        let label = language.openSession(title)
+        let label = url == nil ? title : language.openSession(title)
         setAccessibilityLabel(label)
         toolTip = label
     }

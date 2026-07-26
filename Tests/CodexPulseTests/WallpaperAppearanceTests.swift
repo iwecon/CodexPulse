@@ -218,7 +218,7 @@ private func wallpaperStoreData(
 @MainActor
 @Test func codexSessionLinkViewUpdatesItsExplicitAdaptiveForeground() {
     let view = CodexSessionLinkView(
-        threadID: "thread-1",
+        url: URL(string: "https://chatgpt.com/codex/tasks/thread-1"),
         title: "# latest user message",
         language: .simplifiedChineseMainland,
         textAlignment: .left,

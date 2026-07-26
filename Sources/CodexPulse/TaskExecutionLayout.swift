@@ -1,7 +1,6 @@
 import AppKit
 
 struct TaskExecutionLayout {
-    static let maximumHeight: CGFloat = 120
     static let projectRowHeight: CGFloat = 10
     static let sessionRowHeight: CGFloat = 11
     static let singleLineTaskRowHeight: CGFloat = 12
@@ -21,6 +20,7 @@ struct TaskExecutionLayout {
 
     struct Session: Identifiable {
         let id: String
+        let tool: Tool
         let name: String
         var tasks: [TaskExecution]
     }
@@ -28,6 +28,10 @@ struct TaskExecutionLayout {
     struct SessionLink: Identifiable {
         let id: String
         let threadID: String
+        let tool: Tool
+        /// Project directory backing directory-based deep links; empty when
+        /// none of the session's tasks reported one.
+        let directory: String
         let title: String
         let frame: CGRect
     }
@@ -63,42 +67,21 @@ struct TaskExecutionLayout {
             )
         }
 
-        let maximumContentHeight = maximumHeight - DockPanelContentLayout.bottomInset
-        var selected: [TaskExecution] = []
+        // The panel has no height cap: every task passed in (all running
+        // tasks plus completions still inside their visibility window)
+        // renders, and the panel height follows the content exactly.
+        var usedHeight: CGFloat = 0
         var knownProjects: Set<String> = []
         var knownSessions: Set<SessionKey> = []
-        var usedHeight: CGFloat = 0
-
-        func append(_ task: TaskExecution, respectingHeightLimit: Bool) {
+        for task in tasks {
             let sessionKey = SessionKey(projectName: task.projectName, threadID: task.threadID)
-            var requiredHeight = taskRowHeight(for: task, panelWidth: panelWidth)
-            if !knownProjects.contains(task.projectName) { requiredHeight += projectRowHeight }
-            if !knownSessions.contains(sessionKey) { requiredHeight += sessionRowHeight }
-            guard !respectingHeightLimit || usedHeight + requiredHeight <= maximumContentHeight else { return }
-
-            selected.append(task)
-            knownProjects.insert(task.projectName)
-            knownSessions.insert(sessionKey)
-            usedHeight += requiredHeight
-        }
-
-        let runningTasks = tasks.filter { !$0.isCompleted }.sorted(by: taskAscending)
-        for task in runningTasks {
-            append(task, respectingHeightLimit: false)
-        }
-
-        let recentCompletions = tasks.filter(\.isCompleted).sorted {
-            let left = $0.completedAt ?? $0.startedAt
-            let right = $1.completedAt ?? $1.startedAt
-            if left == right { return $0.id < $1.id }
-            return left < right
-        }
-        for task in recentCompletions.reversed() {
-            append(task, respectingHeightLimit: true)
+            usedHeight += taskRowHeight(for: task, panelWidth: panelWidth)
+            if knownProjects.insert(task.projectName).inserted { usedHeight += projectRowHeight }
+            if knownSessions.insert(sessionKey).inserted { usedHeight += sessionRowHeight }
         }
 
         var projects: [Project] = []
-        for task in selected {
+        for task in tasks {
             let projectIndex: Int
             if let existing = projects.firstIndex(where: { $0.name == task.projectName }) {
                 projectIndex = existing
@@ -111,7 +94,7 @@ struct TaskExecutionLayout {
                 projects[projectIndex].sessions[sessionIndex].tasks.append(task)
             } else {
                 projects[projectIndex].sessions.append(
-                    Session(id: task.threadID, name: task.title, tasks: [task])
+                    Session(id: task.threadID, tool: task.tool, name: task.title, tasks: [task])
                 )
             }
         }
@@ -160,6 +143,8 @@ struct TaskExecutionLayout {
                 links.append(SessionLink(
                     id: "\(project.name)\u{0}\(session.id)",
                     threadID: session.id,
+                    tool: session.tool,
+                    directory: session.tasks.first(where: { !$0.directory.isEmpty })?.directory ?? "",
                     title: title,
                     frame: CGRect(x: x, y: y, width: width, height: sessionRowHeight)
                 ))

@@ -259,19 +259,23 @@ actor TaskMonitor {
         _ executions: [String: TaskExecution],
         now: Date
     ) -> [TaskExecution] {
-        executions.values
-            .filter { task in
-                guard let completedAt = task.completedAt else { return true }
-                return now.timeIntervalSince(completedAt) <= TaskExecution.completedVisibilityDuration
+        sortedForDisplay(executions.values.filter { task in
+            guard let completedAt = task.completedAt else { return true }
+            return now.timeIntervalSince(completedAt) <= TaskExecution.completedVisibilityDuration
+        })
+    }
+
+    /// Shared display order for tasks from every monitored tool, so merged
+    /// per-tool scans produce one stable list.
+    nonisolated static func sortedForDisplay(_ tasks: [TaskExecution]) -> [TaskExecution] {
+        tasks.sorted {
+            if $0.isCompleted != $1.isCompleted {
+                return $0.isCompleted
             }
-            .sorted {
-                if $0.isCompleted != $1.isCompleted {
-                    return $0.isCompleted
-                }
-                let left = $0.completedAt ?? $0.startedAt
-                let right = $1.completedAt ?? $1.startedAt
-                if left == right { return $0.id < $1.id }
-                return left < right
-            }
+            let left = $0.completedAt ?? $0.startedAt
+            let right = $1.completedAt ?? $1.startedAt
+            if left == right { return $0.id < $1.id }
+            return left < right
+        }
     }
 }

@@ -25,7 +25,6 @@ private func layoutTask(
 
     #expect(plan.projects.isEmpty)
     #expect(plan.panelHeight == TaskExecutionLayout.emptyStateHeight + DockPanelContentLayout.bottomInset)
-    #expect(plan.panelHeight < TaskExecutionLayout.maximumHeight)
 }
 
 @Test func taskExecutionEmptyStateAlignmentFollowsPanelSide() {
@@ -68,12 +67,11 @@ private func layoutTask(
     #expect(plan.projects.count == 2)
 }
 
-@Test func taskExecutionLayoutUsesExactVisibleHeightWhenMoreRowsDoNotFit() {
+@Test func taskExecutionLayoutUsesExactVisibleHeight() {
     let tasks = (1...6).map { layoutTask("task-\($0)") }
     let plan = TaskExecutionLayout.plan(for: tasks)
 
     #expect(plan.panelHeight == 97)
-    #expect(plan.panelHeight < TaskExecutionLayout.maximumHeight)
     #expect(plan.projects.flatMap(\.sessions).flatMap(\.tasks).count == 6)
 }
 
@@ -127,7 +125,7 @@ private func layoutTask(
     #expect(displayed.last?.id == "new-a")
 }
 
-@Test func taskExecutionLayoutDropsOldestRowsFirstWhenHeightIsLimited() {
+@Test func taskExecutionLayoutKeepsEveryCompletedTaskWithoutHeightCap() {
     let base = Date(timeIntervalSince1970: 1_780_000_000)
     let longMessage = String(repeating: "很长", count: 100)
     let tasks = (0..<6).map { index in
@@ -142,10 +140,11 @@ private func layoutTask(
 
     let plan = TaskExecutionLayout.plan(for: tasks, panelWidth: 180)
     let displayed = plan.projects.flatMap(\.sessions).flatMap(\.tasks)
-    #expect(displayed.map(\.id) == ["task-2", "task-3", "task-4", "task-5"])
+    #expect(displayed.map(\.id) == tasks.map(\.id))
+    #expect(plan.panelHeight == 157)
 }
 
-@Test func taskExecutionLayoutShowsAllRunningTasksBeyondNormalMaximumHeight() {
+@Test func taskExecutionLayoutShowsAllRunningTasksAtFullContentHeight() {
     let base = Date(timeIntervalSince1970: 1_780_000_000)
     let longMessage = String(repeating: "很长", count: 100)
     let tasks = (0..<6).map { index in
@@ -164,5 +163,5 @@ private func layoutTask(
     let displayed = plan.projects.flatMap(\.sessions).flatMap(\.tasks)
 
     #expect(displayed.map(\.id) == tasks.map(\.id))
-    #expect(plan.panelHeight > TaskExecutionLayout.maximumHeight)
+    #expect(plan.panelHeight == 157)
 }
