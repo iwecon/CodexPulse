@@ -207,7 +207,9 @@ final class DockPanelController {
     private var taskActivityPreferredWidth: CGFloat
     private var taskActivityTextAlignment: TaskActivityTextAlignment
     private var resizeDrag: ResizeDrag?
-    private let wallpaperAppearanceSampler = WallpaperAppearanceSampler()
+    private let wallpaperAppearanceSampler = WallpaperAppearanceSampler(
+        photoImageLoader: PhotoLibraryWallpaperImageLoader()
+    )
     private var wallpaperAppearanceTask: Task<Void, Never>?
     private var wallpaperAppearanceGeneration = 0
     private var wallpaperRefreshTracker = WallpaperRefreshTracker()
@@ -217,6 +219,7 @@ final class DockPanelController {
     private var wallpaperStoreMonitor: WallpaperStoreMonitor?
     private var usageOverviewAppearance: PanelSemanticAppearance?
     private var taskActivityAppearance: PanelSemanticAppearance?
+    private var currentWallpaperUsesPhotoLibrary = false
     private var effectiveAppearanceObservation: NSKeyValueObservation?
     private var observedSystemAppearance: PanelSemanticAppearance?
     private var appearanceChangeResampleTask: Task<Void, Never>?
@@ -261,6 +264,9 @@ final class DockPanelController {
         },
         onToggleTaskTextAlignment: { [weak self] identity in
             self?.toggleTaskTextAlignment(for: identity)
+        },
+        onManagePermissions: { [weak self] _ in
+            self?.managePhotoLibraryPermission()
         },
         onDragBegan: { [weak self] identity, mouseX in
             self?.beginResize(identity, mouseX: mouseX)
@@ -458,8 +464,14 @@ final class DockPanelController {
             indexData: storeData,
             displayUUID: displayUUID,
             workspaceURL: workspace.desktopImageURL(for: screen),
-            workspaceFillColor: fillColor
+            workspaceFillColor: fillColor,
+            systemAppearance: Self.currentSystemAppearance
         )
+        if case .photoAsset = source {
+            currentWallpaperUsesPhotoLibrary = true
+        } else {
+            currentWallpaperUsesPhotoLibrary = false
+        }
         #if DEBUG
         logWallpaperSourceIfNeeded(
             wallpaperSourceResolver.debugDescription(
@@ -510,7 +522,8 @@ final class DockPanelController {
         let request = WallpaperAppearanceRequest(
             source: source,
             screenSize: screen.frame.size,
-            scalingMode: .desktopImageMode(scaling: scaling, allowClipping: allowClipping),
+            scalingMode: source.preferredScalingMode
+                ?? .desktopImageMode(scaling: scaling, allowClipping: allowClipping),
             fillColor: fillColor,
             panelRegions: [
                 WallpaperPanelRegion(
@@ -544,11 +557,11 @@ final class DockPanelController {
                     "panel=\(panelName, privacy: .public) average=\(result.backgroundColor.debugRGBDescription, privacy: .public) foreground=\(foreground, privacy: .public)"
                 )
                 #endif
-                let previousAppearance = result.identifier == 0
-                    ? usageOverviewAppearance
-                    : taskActivityAppearance
-                guard previousAppearance != result.appearance else { continue }
-                apply(result.appearance, toPanelWithIdentifier: result.identifier)
+                apply(
+                    result.appearance,
+                    textColor: result.textColor,
+                    toPanelWithIdentifier: result.identifier
+                )
             }
         }
     }
@@ -615,26 +628,83 @@ final class DockPanelController {
 
     private func apply(
         _ semanticAppearance: PanelSemanticAppearance,
+        textColor: WallpaperRGB? = nil,
         toPanelWithIdentifier identifier: Int
     ) {
         let previousAppearance = identifier == 0
             ? usageOverviewAppearance
             : taskActivityAppearance
-        guard previousAppearance != semanticAppearance else { return }
+        let previousTextColor = identifier == 0
+            ? presentationState.usageTextColor
+            : presentationState.taskTextColor
+        guard previousAppearance != semanticAppearance
+                || previousTextColor != textColor else { return }
         let appearance = NSAppearance(
             named: semanticAppearance == .dark ? .darkAqua : .aqua
         )
         if identifier == 0 {
             usageOverviewAppearance = semanticAppearance
             presentationState.usageAppearance = semanticAppearance
+            presentationState.usageTextColor = textColor
             leftPanel.appearance = appearance
             resizeController.setAppearance(appearance, for: .usageOverview)
         } else {
             taskActivityAppearance = semanticAppearance
             presentationState.taskAppearance = semanticAppearance
+            presentationState.taskTextColor = textColor
             rightPanel.appearance = appearance
-            sessionLinkController.setAppearance(semanticAppearance)
+            sessionLinkController.setAppearance(semanticAppearance, textColor: textColor)
             resizeController.setAppearance(appearance, for: .taskActivity)
+        }
+    }
+
+    /// Shows the photo-library permission dialog from the Usage Overview
+    /// Panel's control group. This is the only place that may trigger the
+    /// system authorization prompt — sampling itself never does.
+    private func managePhotoLibraryPermission() {
+        let language = languageSettings.language
+        let accessState = PhotoLibraryWallpaperImageLoader.accessState
+
+        let alert = NSAlert()
+        alert.messageText = language.photoPermissionTitle
+        var lines = [language.photoPermissionExplanation]
+        switch accessState {
+        case .granted:
+            lines.append(language.photoPermissionGranted)
+            alert.addButton(withTitle: language.okButton)
+        case .denied:
+            lines.append(currentWallpaperUsesPhotoLibrary
+                ? language.photoPermissionNeededNow
+                : language.photoPermissionNotNeededNow)
+            lines.append(language.photoPermissionDenied)
+            alert.addButton(withTitle: language.openSystemSettings)
+            alert.addButton(withTitle: language.notNow)
+        case .notDetermined:
+            lines.append(currentWallpaperUsesPhotoLibrary
+                ? language.photoPermissionNeededNow
+                : language.photoPermissionNotNeededNow)
+            alert.addButton(withTitle: language.authorize)
+            alert.addButton(withTitle: language.notNow)
+        }
+        alert.informativeText = lines.joined(separator: "\n\n")
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        switch accessState {
+        case .granted:
+            break
+        case .denied:
+            if let url = URL(
+                string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Photos"
+            ) {
+                NSWorkspace.shared.open(url)
+            }
+        case .notDetermined:
+            Task { [weak self, wallpaperAppearanceSampler] in
+                guard await PhotoLibraryWallpaperImageLoader.requestAccess() else { return }
+                await wallpaperAppearanceSampler.invalidateCache()
+                self?.positionPanels(forceWallpaperRefresh: true)
+            }
         }
     }
 
@@ -809,6 +879,21 @@ private extension Text {
     }
 }
 
+extension Color {
+    init(_ rgb: WallpaperRGB) {
+        self.init(.sRGB, red: rgb.red, green: rgb.green, blue: rgb.blue, opacity: rgb.alpha)
+    }
+}
+
+private extension View {
+    /// Applies the wallpaper-derived text color as the panel's foreground
+    /// style; secondary text derives from it hierarchically. Without a
+    /// sampled color the semantic primary of the current scheme applies.
+    func dockPanelTextColor(_ textColor: WallpaperRGB?) -> some View {
+        foregroundStyle(textColor.map(Color.init) ?? Color.primary)
+    }
+}
+
 struct RecentUsageView: View {
     @Bindable var model: UsageModel
     let presentation: DockPanelPresentationState
@@ -836,6 +921,7 @@ struct RecentUsageView: View {
             maxHeight: .infinity,
             alignment: presentation.usageSide == .left ? .bottomLeading : .bottomTrailing
         )
+        .dockPanelTextColor(presentation.usageTextColor)
         .environment(
             \.colorScheme,
             presentation.usageAppearance == .dark ? .dark : .light
@@ -1228,6 +1314,7 @@ struct TaskExecutionView: View {
                 value: visibleTaskIDs
             )
         }
+        .dockPanelTextColor(presentation.taskTextColor)
         .environment(
             \.colorScheme,
             presentation.taskAppearance == .dark ? .dark : .light

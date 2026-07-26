@@ -42,40 +42,68 @@ struct WallpaperSourceCandidate: Sendable, Equatable, Hashable {
     }
 }
 
+/// A wallpaper backed by a Photos-library asset. The pixels are only
+/// reachable through PhotoKit, so the source carries the asset identifier and
+/// the placement geometry parsed from the wallpaper Store.
+struct WallpaperPhotoAsset: Sendable, Equatable, Hashable {
+    let identifier: String
+    let scaling: WallpaperScalingMode
+}
+
 enum WallpaperSource: Sendable, Equatable {
     enum Identity: Sendable, Equatable {
         case solid(WallpaperRGB)
+        case solidImage(WallpaperSourceCandidate)
         case staticImage(WallpaperSourceCandidate)
         case phaseUnknown([WallpaperSourceCandidate])
+        case photoAsset(WallpaperPhotoAsset)
         case unavailable
     }
 
     case solid(WallpaperRGB)
+    /// A uniform-color asset whose sampled color fills the whole screen,
+    /// independent of the desktop image scaling geometry.
+    case solidImage(WallpaperSourceCandidate)
     case staticImage(WallpaperSourceCandidate)
     case phaseUnknown([WallpaperSourceCandidate])
+    case photoAsset(WallpaperPhotoAsset)
     case unavailable
 
     var identity: Identity {
         switch self {
         case let .solid(color): .solid(color)
+        case let .solidImage(candidate): .solidImage(candidate)
         case let .staticImage(candidate): .staticImage(candidate)
         case let .phaseUnknown(candidates): .phaseUnknown(candidates)
+        case let .photoAsset(asset): .photoAsset(asset)
         case .unavailable: .unavailable
         }
     }
 
     var candidates: [WallpaperSourceCandidate] {
         switch self {
+        case let .solidImage(candidate): [candidate]
         case let .staticImage(candidate): [candidate]
         case let .phaseUnknown(candidates): candidates
-        case .solid, .unavailable: []
+        case .solid, .photoAsset, .unavailable: []
         }
+    }
+
+    /// Scaling geometry dictated by the source itself, overriding the
+    /// `NSWorkspace` desktop image options (which are stale for photo assets).
+    var preferredScalingMode: WallpaperScalingMode? {
+        if case let .photoAsset(asset) = self { return asset.scaling }
+        return nil
     }
 }
 
 struct WallpaperSourceResolver: Sendable {
     static let defaultAerialResourcesDirectory = WallpaperStoreConfiguration.defaultAerialResourcesDirectory
     static let defaultNeptuneResourcesDirectory = WallpaperStoreConfiguration.defaultNeptuneResourcesDirectory
+    static let defaultSystemSolidColorsDirectory = URL(
+        filePath: "/System/Library/Desktop Pictures/Solid Colors",
+        directoryHint: .isDirectory
+    )
     static let defaultSequoiaResourcesDirectory = URL(
         filePath: "/System/Library/ExtensionKit/Extensions/WallpaperSequoiaExtension.appex/Contents/Resources",
         directoryHint: .isDirectory
@@ -83,12 +111,14 @@ struct WallpaperSourceResolver: Sendable {
 
     let aerialResourcesDirectory: URL
     let neptuneResourcesDirectory: URL
+    let systemSolidColorsDirectory: URL
     let sequoiaResourcesDirectory: URL
     let aerialMovieDirectories: [URL]
 
     init(
         aerialResourcesDirectory: URL = Self.defaultAerialResourcesDirectory,
         neptuneResourcesDirectory: URL = Self.defaultNeptuneResourcesDirectory,
+        systemSolidColorsDirectory: URL = Self.defaultSystemSolidColorsDirectory,
         sequoiaResourcesDirectory: URL = Self.defaultSequoiaResourcesDirectory,
         aerialMovieDirectories: [URL] = [
             FileManager.default.homeDirectoryForCurrentUser
@@ -101,6 +131,7 @@ struct WallpaperSourceResolver: Sendable {
     ) {
         self.aerialResourcesDirectory = aerialResourcesDirectory
         self.neptuneResourcesDirectory = neptuneResourcesDirectory
+        self.systemSolidColorsDirectory = systemSolidColorsDirectory
         self.sequoiaResourcesDirectory = sequoiaResourcesDirectory
         self.aerialMovieDirectories = aerialMovieDirectories
     }
@@ -109,7 +140,8 @@ struct WallpaperSourceResolver: Sendable {
         indexData: Data?,
         displayUUID: String?,
         workspaceURL: URL?,
-        workspaceFillColor: WallpaperRGB? = nil
+        workspaceFillColor: WallpaperRGB? = nil,
+        systemAppearance: PanelSemanticAppearance? = nil
     ) -> WallpaperSource {
         guard let indexData,
               let root = try? PropertyListSerialization.propertyList(
@@ -132,6 +164,18 @@ struct WallpaperSourceResolver: Sendable {
             return .solid(color)
         }
 
+        if choices.contains(where: isSystemColorSelection) {
+            guard let name = choices.lazy.compactMap(systemColorName(in:)).first,
+                  let url = systemColorImageURL(named: name) else {
+                return .unavailable
+            }
+            return .solidImage(WallpaperSourceCandidate(url: url, kind: .image))
+        }
+
+        if let photoAsset = photoAssetSource(choices: choices, content: content) {
+            return photoAsset
+        }
+
         let style = decodedDictionary(content["EncodedOptionValues"])
             .flatMap(styleID(in:))?
             .lowercased()
@@ -143,7 +187,11 @@ struct WallpaperSourceResolver: Sendable {
                         containsInvalidAuthoritativeSource = true
                         continue
                     }
-                    if let source = desktopPictureSource(descriptorURL: file, style: style) {
+                    if let source = desktopPictureSource(
+                        descriptorURL: file,
+                        style: style,
+                        systemAppearance: systemAppearance
+                    ) {
                         return source
                     }
                     containsInvalidAuthoritativeSource = true
@@ -163,7 +211,11 @@ struct WallpaperSourceResolver: Sendable {
                 continue
             }
             if url.pathExtension.lowercased() == "madesktop" {
-                if let source = desktopPictureSource(descriptorURL: url, style: style) {
+                if let source = desktopPictureSource(
+                    descriptorURL: url,
+                    style: style,
+                    systemAppearance: systemAppearance
+                ) {
                     return source
                 }
                 containsInvalidAuthoritativeSource = true
@@ -178,11 +230,11 @@ struct WallpaperSourceResolver: Sendable {
         let lowercasedProviders = providers.map { $0.lowercased() }
 
         if lowercasedProviders.contains("com.apple.neptuneoneextension") {
-            return neptuneSource(content: content)
+            return neptuneSource(content: content, systemAppearance: systemAppearance)
         }
 
         if lowercasedProviders.contains("com.apple.wallpaper.choice.sequoia") {
-            return sequoiaSource(content: content)
+            return sequoiaSource(content: content, systemAppearance: systemAppearance)
         }
 
         if let assetID = choices.lazy.compactMap(assetID(in:)).first {
@@ -206,7 +258,11 @@ struct WallpaperSourceResolver: Sendable {
         return .unavailable
     }
 
-    private func desktopPictureSource(descriptorURL: URL, style: String?) -> WallpaperSource? {
+    private func desktopPictureSource(
+        descriptorURL: URL,
+        style: String?,
+        systemAppearance: PanelSemanticAppearance? = nil
+    ) -> WallpaperSource? {
         guard Self.isRegularReadableFile(descriptorURL),
               let data = try? Data(contentsOf: descriptorURL),
               let descriptor = try? PropertyListSerialization.propertyList(
@@ -243,12 +299,26 @@ struct WallpaperSourceResolver: Sendable {
             return .staticImage(WallpaperSourceCandidate(url: selected))
         }
 
+        // Non-solar dynamic wallpapers switch phases with the system
+        // appearance, so the current phase is known and its variant applies
+        // directly instead of a cross-phase evaluation.
+        if let systemAppearance, Self.boolValue(descriptor["isSolar"]) == false {
+            let preferred = systemAppearance == .dark ? dark : light
+            if Self.isSupportedMediaFile(preferred) {
+                return .staticImage(WallpaperSourceCandidate(url: preferred))
+            }
+            return .staticImage(WallpaperSourceCandidate(url: baseURL))
+        }
+
         return source(for: [baseURL, light, dark]
             .filter(Self.isSupportedMediaFile)
             .map { WallpaperSourceCandidate(url: $0) })
     }
 
-    private func neptuneSource(content: [String: Any]) -> WallpaperSource {
+    private func neptuneSource(
+        content: [String: Any],
+        systemAppearance: PanelSemanticAppearance? = nil
+    ) -> WallpaperSource {
         guard let options = decodedDictionary(content["EncodedOptionValues"]),
               let style = styleID(in: options)?.lowercased() else {
             return .unavailable
@@ -266,12 +336,17 @@ struct WallpaperSourceResolver: Sendable {
                 : .unavailable
         }
         guard style == "dynamic" else { return .unavailable }
-        return source(for: [light, dark]
-            .filter(Self.isReadableFile)
-            .map { WallpaperSourceCandidate(url: $0) })
+        return appearanceDrivenSource(
+            light: light,
+            dark: dark,
+            systemAppearance: systemAppearance
+        )
     }
 
-    private func sequoiaSource(content: [String: Any]) -> WallpaperSource {
+    private func sequoiaSource(
+        content: [String: Any],
+        systemAppearance: PanelSemanticAppearance? = nil
+    ) -> WallpaperSource {
         guard let options = decodedDictionary(content["EncodedOptionValues"]),
               let style = styleID(in: options)?.lowercased() else {
             return .unavailable
@@ -289,6 +364,27 @@ struct WallpaperSourceResolver: Sendable {
                 : .unavailable
         }
         guard style == "dynamic" || style == "automatic" else { return .unavailable }
+        return appearanceDrivenSource(
+            light: light,
+            dark: dark,
+            systemAppearance: systemAppearance
+        )
+    }
+
+    /// Dynamic styles switch with the system appearance; with a known
+    /// appearance the matching variant applies directly, otherwise every
+    /// readable phase is evaluated together.
+    private func appearanceDrivenSource(
+        light: URL,
+        dark: URL,
+        systemAppearance: PanelSemanticAppearance?
+    ) -> WallpaperSource {
+        if let systemAppearance {
+            let preferred = systemAppearance == .dark ? dark : light
+            if Self.isReadableFile(preferred) {
+                return .staticImage(WallpaperSourceCandidate(url: preferred))
+            }
+        }
         return source(for: [light, dark]
             .filter(Self.isReadableFile)
             .map { WallpaperSourceCandidate(url: $0) })
@@ -365,6 +461,104 @@ struct WallpaperSourceResolver: Sendable {
 
     private func assetID(in choice: [String: Any]) -> String? {
         decodedDictionary(choice["Configuration"])?["assetID"] as? String
+    }
+
+    /// Recognizes Photos-library wallpapers (`com.apple.wallpaper.extension.photos`
+    /// with an `asset` configuration). The Store carries only the PhotoKit
+    /// asset identifier plus the placement option — no local file path.
+    private func photoAssetSource(
+        choices: [[String: Any]],
+        content: [String: Any]
+    ) -> WallpaperSource? {
+        for choice in choices {
+            guard let provider = (choice["Provider"] as? String)?.lowercased(),
+                  provider.contains("wallpaper.extension.photos"),
+                  let configuration = decodedDictionary(choice["Configuration"]),
+                  configurationType(in: configuration)?.lowercased() == "asset",
+                  let identifier = configuration["identifier"] as? String,
+                  !identifier.isEmpty else {
+                continue
+            }
+            let placement = decodedDictionary(content["EncodedOptionValues"])
+                .flatMap(placementID(in:))?
+                .lowercased()
+            return .photoAsset(WallpaperPhotoAsset(
+                identifier: identifier,
+                scaling: Self.scalingMode(forPlacement: placement)
+            ))
+        }
+        return nil
+    }
+
+    private func placementID(in options: [String: Any]) -> String? {
+        if let flattened = options["placement.picker._0.id"] as? String { return flattened }
+        guard let values = options["values"] as? [String: Any],
+              let placement = values["placement"] as? [String: Any],
+              let picker = placement["picker"] as? [String: Any],
+              let zero = picker["_0"] as? [String: Any] else {
+            return nil
+        }
+        return zero["id"] as? String
+    }
+
+    private static func scalingMode(forPlacement placement: String?) -> WallpaperScalingMode {
+        switch placement {
+        case "fit": .fit
+        case "stretch": .stretch
+        case "center": .center
+        // Photos wallpapers default to cropping the picture to fill the screen.
+        default: .fill
+        }
+    }
+
+    private func isSystemColorSelection(_ choice: [String: Any]) -> Bool {
+        guard let configuration = decodedDictionary(choice["Configuration"]) else {
+            return false
+        }
+        return configurationType(in: configuration)?.lowercased() == "systemcolor"
+    }
+
+    private func systemColorName(in choice: [String: Any]) -> String? {
+        guard let configuration = decodedDictionary(choice["Configuration"]) else {
+            return nil
+        }
+        if let name = configuration["systemColor"] as? String, !name.isEmpty {
+            return name
+        }
+        guard let colors = configuration["systemColor"] as? [String: Any] else {
+            return nil
+        }
+        return colors.keys.sorted().first
+    }
+
+    private func systemColorImageURL(named name: String) -> URL? {
+        let normalizedName = Self.normalizedSystemColorName(name)
+        guard !normalizedName.isEmpty,
+              let urls = try? FileManager.default.contentsOfDirectory(
+                  at: systemSolidColorsDirectory,
+                  includingPropertiesForKeys: [.isRegularFileKey, .contentTypeKey],
+                  options: [.skipsHiddenFiles]
+              ) else {
+            return nil
+        }
+        return urls.sorted { $0.path < $1.path }.first {
+            $0.pathExtension.caseInsensitiveCompare("png") == .orderedSame
+                && Self.normalizedSystemColorName(
+                    $0.deletingPathExtension().lastPathComponent
+                ) == normalizedName
+                && Self.isSupportedMediaFile($0)
+        }
+    }
+
+    private static func normalizedSystemColorName(_ value: String) -> String {
+        value
+            .folding(
+                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                locale: Locale(identifier: "en_US_POSIX")
+            )
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .joined()
+            .lowercased()
     }
 
     private func decodedDictionary(_ value: Any?) -> [String: Any]? {
@@ -467,6 +661,8 @@ struct WallpaperSourceResolver: Sendable {
         let colorDescription: String
         if case let .solid(color) = source {
             colorDescription = " color=\(color.debugRGBDescription)"
+        } else if case let .photoAsset(asset) = source {
+            colorDescription = " asset=\(asset.identifier) scaling=\(asset.scaling)"
         } else {
             colorDescription = ""
         }
@@ -491,6 +687,7 @@ struct WallpaperSourceResolver: Sendable {
     private func debugType(for source: WallpaperSource, providers: [String]) -> String {
         let normalized = providers.map { $0.lowercased() }
         if case .solid = source { return "Colors" }
+        if case .solidImage = source { return "Colors" }
         if normalized.contains(where: { $0.contains("photo") }) { return "Photos" }
         if normalized.contains(where: { $0.contains("movie") }) { return "Movies" }
         if normalized.contains(where: {

@@ -99,6 +99,121 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    var managePermissions: String {
+        switch self {
+        case .simplifiedChineseMainland: "权限管理"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "權限管理"
+        case .japanese: "権限の管理"
+        case .korean: "권한 관리"
+        case .english: "Manage permissions"
+        }
+    }
+
+    var photoPermissionTitle: String {
+        switch self {
+        case .simplifiedChineseMainland: "照片图库权限"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "照片圖庫權限"
+        case .japanese: "写真ライブラリの権限"
+        case .korean: "사진 보관함 권한"
+        case .english: "Photo Library Permission"
+        }
+    }
+
+    var photoPermissionExplanation: String {
+        switch self {
+        case .simplifiedChineseMainland:
+            "当壁纸来自照片图库时，Codex Pulse 需要读取这张照片来计算面板文字颜色。不会上传或存储任何内容。"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan:
+            "當壁紙來自照片圖庫時，Codex Pulse 需要讀取這張照片來計算面板文字顏色。不會上傳或儲存任何內容。"
+        case .japanese:
+            "壁紙が写真ライブラリの写真の場合、Codex Pulse はパネルの文字色を計算するためにその写真を読み取ります。アップロードや保存は行いません。"
+        case .korean:
+            "배경화면이 사진 보관함의 사진일 때 Codex Pulse는 패널 글자 색상을 계산하기 위해 해당 사진을 읽습니다. 업로드하거나 저장하지 않습니다."
+        case .english:
+            "When the wallpaper comes from your photo library, Codex Pulse reads that picture to compute the panel text color. Nothing is uploaded or stored."
+        }
+    }
+
+    var photoPermissionNeededNow: String {
+        switch self {
+        case .simplifiedChineseMainland: "当前壁纸来自照片图库，授权后文字颜色才能自适应。"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "目前壁紙來自照片圖庫，授權後文字顏色才能自動適應。"
+        case .japanese: "現在の壁紙は写真ライブラリの写真です。許可すると文字色が自動的に適応します。"
+        case .korean: "현재 배경화면이 사진 보관함의 사진입니다. 허용해야 글자 색상이 자동으로 적응합니다."
+        case .english: "The current wallpaper is a photo-library picture; grant access so the text color can adapt."
+        }
+    }
+
+    var photoPermissionNotNeededNow: String {
+        switch self {
+        case .simplifiedChineseMainland: "当前壁纸不是照片图库壁纸，可以暂不授权。"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "目前壁紙並非照片圖庫壁紙，可以暫不授權。"
+        case .japanese: "現在の壁紙は写真ライブラリの写真ではないため、今は許可しなくてもかまいません。"
+        case .korean: "현재 배경화면은 사진 보관함 사진이 아니므로 지금은 허용하지 않아도 됩니다."
+        case .english: "The current wallpaper does not come from the photo library, so access is not needed right now."
+        }
+    }
+
+    var photoPermissionGranted: String {
+        switch self {
+        case .simplifiedChineseMainland: "已授权照片图库访问。"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "已授權照片圖庫存取。"
+        case .japanese: "写真ライブラリへのアクセスは許可済みです。"
+        case .korean: "사진 보관함 접근이 이미 허용되어 있습니다."
+        case .english: "Photo library access is already granted."
+        }
+    }
+
+    var photoPermissionDenied: String {
+        switch self {
+        case .simplifiedChineseMainland: "此前已拒绝授权，请在系统设置中开启。"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "先前已拒絕授權，請在系統設定中開啟。"
+        case .japanese: "以前に拒否されています。システム設定で許可してください。"
+        case .korean: "이전에 거부되었습니다. 시스템 설정에서 허용해 주세요."
+        case .english: "Access was previously declined; enable it in System Settings."
+        }
+    }
+
+    var authorize: String {
+        switch self {
+        case .simplifiedChineseMainland: "授权"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "授權"
+        case .japanese: "許可"
+        case .korean: "허용"
+        case .english: "Grant Access"
+        }
+    }
+
+    var openSystemSettings: String {
+        switch self {
+        case .simplifiedChineseMainland: "打开系统设置"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "開啟系統設定"
+        case .japanese: "システム設定を開く"
+        case .korean: "시스템 설정 열기"
+        case .english: "Open System Settings"
+        }
+    }
+
+    var notNow: String {
+        switch self {
+        case .simplifiedChineseMainland: "暂不"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "暫不"
+        case .japanese: "今はしない"
+        case .korean: "나중에"
+        case .english: "Not Now"
+        }
+    }
+
+    var okButton: String {
+        switch self {
+        case .simplifiedChineseMainland: "好"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "好"
+        case .japanese: "OK"
+        case .korean: "확인"
+        case .english: "OK"
+        }
+    }
+
     var runningTask: String {
         switch self {
         case .simplifiedChineseMainland: "任务执行中"

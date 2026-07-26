@@ -20,15 +20,23 @@ enum CodexThreadLink {
 final class CodexSessionLinkController {
     private var panels: [String: NSPanel] = [:]
     private var semanticAppearance: PanelSemanticAppearance = .dark
+    private var textColor: WallpaperRGB?
 
-    func setAppearance(_ semanticAppearance: PanelSemanticAppearance) {
+    func setAppearance(
+        _ semanticAppearance: PanelSemanticAppearance,
+        textColor: WallpaperRGB? = nil
+    ) {
         self.semanticAppearance = semanticAppearance
+        self.textColor = textColor
         let appearance = NSAppearance(
             named: semanticAppearance == .dark ? .darkAqua : .aqua
         )
         for panel in panels.values {
             panel.appearance = appearance
-            (panel.contentView as? CodexSessionLinkView)?.setAppearance(semanticAppearance)
+            (panel.contentView as? CodexSessionLinkView)?.setAppearance(
+                semanticAppearance,
+                textColor: textColor
+            )
             panel.displayIfNeeded()
         }
     }
@@ -86,7 +94,8 @@ final class CodexSessionLinkController {
             title: title,
             language: language,
             textAlignment: textAlignment,
-            semanticAppearance: semanticAppearance
+            semanticAppearance: semanticAppearance,
+            textColor: textColor
         )
         panel.appearance = NSAppearance(
             named: semanticAppearance == .dark ? .darkAqua : .aqua
@@ -110,9 +119,16 @@ final class CodexSessionLinkView: NSView {
     private var language: AppLanguage
     private var textAlignment: TaskActivityTextAlignment
     private var semanticAppearance: PanelSemanticAppearance
+    private var textColor: WallpaperRGB?
 
     var renderedForegroundColor: NSColor {
-        semanticAppearance.foregroundColor
+        guard let textColor else { return semanticAppearance.foregroundColor }
+        return NSColor(
+            srgbRed: textColor.red,
+            green: textColor.green,
+            blue: textColor.blue,
+            alpha: textColor.alpha
+        )
     }
 
     init(
@@ -120,13 +136,15 @@ final class CodexSessionLinkView: NSView {
         title: String,
         language: AppLanguage,
         textAlignment: TaskActivityTextAlignment,
-        semanticAppearance: PanelSemanticAppearance
+        semanticAppearance: PanelSemanticAppearance,
+        textColor: WallpaperRGB? = nil
     ) {
         self.threadID = threadID
         self.title = title
         self.language = language
         self.textAlignment = textAlignment
         self.semanticAppearance = semanticAppearance
+        self.textColor = textColor
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.link)
@@ -155,9 +173,14 @@ final class CodexSessionLinkView: NSView {
         needsDisplay = true
     }
 
-    func setAppearance(_ semanticAppearance: PanelSemanticAppearance) {
-        guard self.semanticAppearance != semanticAppearance else { return }
+    func setAppearance(
+        _ semanticAppearance: PanelSemanticAppearance,
+        textColor: WallpaperRGB? = nil
+    ) {
+        guard self.semanticAppearance != semanticAppearance
+                || self.textColor != textColor else { return }
         self.semanticAppearance = semanticAppearance
+        self.textColor = textColor
         needsDisplay = true
     }
 
