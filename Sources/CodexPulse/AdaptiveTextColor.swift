@@ -127,6 +127,15 @@ enum AdaptiveTextColor {
     /// panel's text polarity, so per-tool hues stay distinguishable while
     /// matching the wallpaper-adaptive contrast direction. A `nil` hue is
     /// achromatic: near-white over dark panels, dark gray over light panels.
+    /// A tool's fixed brand color when it defines one, otherwise the
+    /// polarity-adaptive hue rendering below.
+    static func barColor(
+        for tool: Tool,
+        appearance: PanelSemanticAppearance
+    ) -> WallpaperRGB {
+        tool.fixedBarColor ?? barColor(hueDegrees: tool.barHueDegrees, appearance: appearance)
+    }
+
     static func barColor(
         hueDegrees: Double?,
         appearance: PanelSemanticAppearance

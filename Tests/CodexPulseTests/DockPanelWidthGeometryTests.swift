@@ -376,6 +376,29 @@ import Testing
     #expect(DockPanelOverlayGeometry.resizeHitWidth == 46)
 }
 
+@Test func legendOccupiesBottomStripWithoutReachingResizeRegion() {
+    for side in PanelSide.allCases {
+        let bounds = CGRect(x: 0, y: 0, width: 430, height: 100)
+        let resize = DockPanelOverlayGeometry.resizeRegionFrame(in: bounds, side: side)
+        let legend = DockPanelOverlayGeometry.legendFrame(in: bounds, side: side)
+        let actions = DockPanelOverlayGeometry.actionSurfaceFrames(
+            in: bounds,
+            side: side,
+            actionCount: 3,
+            legendVisible: true
+        )
+
+        #expect(!legend.intersects(resize))
+        #expect(legend.minY == DockPanelOverlayGeometry.controlPadding)
+        #expect(legend.height == DockPanelOverlayGeometry.legendHeight)
+        #expect(legend.minX == (actions.first?.minX ?? -1))
+        #expect(legend.maxX == (actions.last?.maxX ?? -1))
+        #expect(actions.allSatisfy { $0.minY == legend.maxY + DockPanelOverlayGeometry.controlGap })
+        #expect(actions.allSatisfy { $0.maxY == bounds.maxY - DockPanelOverlayGeometry.controlPadding })
+        #expect(actions.allSatisfy { !$0.intersects(legend) && !$0.intersects(resize) })
+    }
+}
+
 @Test func resizeFocusPresentationFadesActionsAndContractsBackgroundByItsPadding() {
     let bounds = CGRect(x: 0, y: 0, width: 430, height: 100)
     let normal = DockPanelInteractionPresentation.resolve(

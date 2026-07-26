@@ -250,6 +250,21 @@ final class DockPanelController {
             guard identity == .taskActivity, let self else { return nil }
             return taskActivityTextAlignment.controlPresentation(language: languageSettings.language)
         },
+        usageLegendItems: { [weak self] identity in
+            guard identity == .usageOverview, let self else { return [] }
+            let tools = model.snapshot.activeTools
+            guard tools.count > 1 else { return [] }
+            return tools.map { tool in
+                let rgb = AdaptiveTextColor.barColor(
+                    for: tool,
+                    appearance: presentationState.usageAppearance
+                )
+                return DockPanelUsageLegendItem(
+                    name: tool.rawValue,
+                    color: NSColor(srgbRed: rgb.red, green: rgb.green, blue: rgb.blue, alpha: rgb.alpha)
+                )
+            }
+        },
         language: { [weak self] in
             self?.languageSettings.language ?? .simplifiedChineseMainland
         },
@@ -1037,7 +1052,7 @@ struct RecentUsageView: View {
 
     private func barColor(for tool: Tool) -> Color {
         Color(AdaptiveTextColor.barColor(
-            hueDegrees: tool.barHueDegrees,
+            for: tool,
             appearance: presentation.usageAppearance == .dark ? .dark : .light
         ))
     }

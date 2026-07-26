@@ -505,6 +505,7 @@ struct DockPanelOverlayGeometry {
     static let actionCornerRadius: CGFloat = 10
     static let controlGap: CGFloat = 6
     static let controlPadding: CGFloat = 6
+    static let legendHeight: CGFloat = 14
     static let resizeFocusAnimationDuration: TimeInterval = 0.34
     static let resizeFocusedActionScale: CGFloat = 0.98
     static var resizeHitWidth: CGFloat { resizeWidth + 2 * controlPadding }
@@ -564,34 +565,61 @@ struct DockPanelOverlayGeometry {
         )
     }
 
-    static func actionSurfaceFrames(in bounds: CGRect, side: PanelSide, actionCount: Int) -> [CGRect] {
+    static func actionSurfaceFrames(
+        in bounds: CGRect,
+        side: PanelSide,
+        actionCount: Int,
+        legendVisible: Bool = false
+    ) -> [CGRect] {
         let count = max(1, actionCount)
         let resize = resizeRegionFrame(in: bounds, side: side)
         let regionMinX = side == .left ? bounds.minX + controlPadding : resize.maxX
         let regionMaxX = side == .left ? resize.minX : bounds.maxX - controlPadding
         let availableWidth = max(0, regionMaxX - regionMinX - CGFloat(count - 1) * controlGap)
         let actionWidth = availableWidth / CGFloat(count)
-        let actionHeight = max(0, bounds.height - 2 * controlPadding)
+        let legendInset = legendVisible ? legendHeight + controlGap : 0
+        let actionHeight = max(0, bounds.height - 2 * controlPadding - legendInset)
         var x = regionMinX
         return (0..<count).map { _ in
             defer { x += actionWidth + controlGap }
             return CGRect(
                 x: x,
-                y: bounds.minY + controlPadding,
+                y: bounds.minY + controlPadding + legendInset,
                 width: actionWidth,
                 height: actionHeight
             )
         }
     }
 
+    /// Bottom strip for the usage tool legend. It spans the same horizontal
+    /// region as the action buttons, so it never reaches under the resize
+    /// strip on either side.
+    static func legendFrame(in bounds: CGRect, side: PanelSide) -> CGRect {
+        let resize = resizeRegionFrame(in: bounds, side: side)
+        let minX = side == .left ? bounds.minX + controlPadding : resize.maxX
+        let maxX = side == .left ? resize.minX : bounds.maxX - controlPadding
+        return CGRect(
+            x: minX,
+            y: bounds.minY + controlPadding,
+            width: max(0, maxX - minX),
+            height: legendHeight
+        )
+    }
+
     static func actionSurfacesContain(
         _ point: CGPoint,
         in bounds: CGRect,
         side: PanelSide,
-        actionCount: Int
+        actionCount: Int,
+        legendVisible: Bool = false
     ) -> Bool {
-        actionSurfaceFrames(in: bounds, side: side, actionCount: actionCount)
-            .contains { $0.contains(point) }
+        actionSurfaceFrames(
+            in: bounds,
+            side: side,
+            actionCount: actionCount,
+            legendVisible: legendVisible
+        )
+        .contains { $0.contains(point) }
     }
 }
 
@@ -648,6 +676,7 @@ final class DockPanelResizeController {
     typealias ActionHandler = @MainActor (DockPanelIdentity) -> Void
     typealias LanguageProvider = @MainActor () -> AppLanguage
     typealias LanguageHandler = @MainActor (AppLanguage) -> Void
+    typealias LegendProvider = @MainActor (DockPanelIdentity) -> [DockPanelUsageLegendItem]
 
     nonisolated static let hoverDelay: TimeInterval = 0.5
     nonisolated static let hideDelay: TimeInterval = 1
@@ -659,6 +688,7 @@ final class DockPanelResizeController {
     private let sideTogglePresentation: PresentationProvider
     private let verticalSwapPresentation: OptionalPresentationProvider
     private let taskTextAlignmentPresentation: OptionalPresentationProvider
+    private let usageLegendItems: LegendProvider
     private let language: LanguageProvider
     private let onSelectLanguage: LanguageHandler
     private let onToggleSide: ActionHandler
@@ -688,6 +718,7 @@ final class DockPanelResizeController {
         sideTogglePresentation: @escaping PresentationProvider,
         verticalSwapPresentation: @escaping OptionalPresentationProvider,
         taskTextAlignmentPresentation: @escaping OptionalPresentationProvider,
+        usageLegendItems: @escaping LegendProvider,
         language: @escaping LanguageProvider,
         onSelectLanguage: @escaping LanguageHandler,
         onToggleSide: @escaping ActionHandler,
@@ -703,6 +734,7 @@ final class DockPanelResizeController {
         self.sideTogglePresentation = sideTogglePresentation
         self.verticalSwapPresentation = verticalSwapPresentation
         self.taskTextAlignmentPresentation = taskTextAlignmentPresentation
+        self.usageLegendItems = usageLegendItems
         self.language = language
         self.onSelectLanguage = onSelectLanguage
         self.onToggleSide = onToggleSide
@@ -885,7 +917,8 @@ final class DockPanelResizeController {
             localPoint,
             in: bounds,
             side: side,
-            actionCount: interactionView.visibleButtonCount
+            actionCount: interactionView.visibleButtonCount,
+            legendVisible: interactionView.isLegendVisible
         ) else { return }
         setResizeFocus(false, for: identity)
     }
@@ -972,6 +1005,7 @@ final class DockPanelResizeController {
                 sideToggle: sideTogglePresentation(identity),
                 verticalSwap: verticalPresentation,
                 taskTextAlignment: taskTextAlignmentPresentation(identity),
+                legendItems: usageLegendItems(identity),
                 language: language(),
                 resizeFocused: resizeFocusedHandle == identity,
                 animated: animated,
@@ -1031,6 +1065,53 @@ final class DockPanelResizeController {
     }
 }
 
+struct DockPanelUsageLegendItem: Equatable {
+    let name: String
+    let color: NSColor
+}
+
+/// Bottom row of the usage interaction overlay mapping each trend-bar color
+/// to its tool name. Draws dot-plus-label pairs clipped to its own frame,
+/// which the geometry keeps clear of the resize strip.
+@MainActor
+private final class DockPanelUsageLegendView: NSView {
+    var items: [DockPanelUsageLegendItem] = [] {
+        didSet { if items != oldValue { needsDisplay = true } }
+    }
+    var alignTrailing = false {
+        didSet { if alignTrailing != oldValue { needsDisplay = true } }
+    }
+
+    private static let dotDiameter: CGFloat = 5
+    private static let dotTextGap: CGFloat = 3
+    private static let itemGap: CGFloat = 8
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !items.isEmpty else { return }
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+            .foregroundColor: NSColor.secondaryLabelColor
+        ]
+        let texts = items.map { NSAttributedString(string: $0.name, attributes: attributes) }
+        let totalWidth = texts.reduce(0) { $0 + Self.dotDiameter + Self.dotTextGap + ceil($1.size().width) }
+            + CGFloat(max(0, texts.count - 1)) * Self.itemGap
+        var x = alignTrailing ? max(bounds.minX, bounds.maxX - totalWidth) : bounds.minX
+        for (item, text) in zip(items, texts) {
+            let textSize = text.size()
+            item.color.setFill()
+            NSBezierPath(ovalIn: CGRect(
+                x: x,
+                y: bounds.midY - Self.dotDiameter / 2,
+                width: Self.dotDiameter,
+                height: Self.dotDiameter
+            )).fill()
+            x += Self.dotDiameter + Self.dotTextGap
+            text.draw(at: NSPoint(x: x, y: bounds.midY - textSize.height / 2))
+            x += ceil(textSize.width) + Self.itemGap
+        }
+    }
+}
+
 @MainActor
 private final class DockPanelInteractionView: NSView {
     private let identity: DockPanelIdentity
@@ -1047,6 +1128,7 @@ private final class DockPanelInteractionView: NSView {
     private let sideButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let verticalButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let taskTextAlignmentButton = NSButton(image: NSImage(), target: nil, action: nil)
+    private let legendView = DockPanelUsageLegendView()
     private let languagePicker: DockPanelLanguagePickerView
     private let resizeView: DockPanelResizeRegionView
     private let onToggleSide: () -> Void
@@ -1064,6 +1146,8 @@ private final class DockPanelInteractionView: NSView {
             + (verticalButton.isHidden ? 0 : 1)
             + (permissionButton.isHidden ? 0 : 1)
     }
+
+    var isLegendVisible: Bool { !legendView.isHidden }
 
     init(
         identity: DockPanelIdentity,
@@ -1121,6 +1205,8 @@ private final class DockPanelInteractionView: NSView {
         actionsView.addSubview(sideSurface)
         actionsView.addSubview(verticalSurface)
         actionsView.addSubview(taskTextAlignmentSurface)
+        legendView.isHidden = true
+        actionsView.addSubview(legendView)
         addSubview(backgroundGlass)
         addSubview(actionsView)
         addSubview(resizeView)
@@ -1140,10 +1226,14 @@ private final class DockPanelInteractionView: NSView {
         backgroundGlass.frame = presentation.backgroundFrame
         actionsView.frame = bounds
         resizeView.frame = DockPanelOverlayGeometry.resizeRegionFrame(in: bounds, side: side)
+        if isLegendVisible {
+            legendView.frame = DockPanelOverlayGeometry.legendFrame(in: bounds, side: side)
+        }
         let frames = DockPanelOverlayGeometry.actionSurfaceFrames(
             in: bounds,
             side: side,
-            actionCount: visibleButtonCount
+            actionCount: visibleButtonCount,
+            legendVisible: isLegendVisible
         )
         if isLanguagePickerVisible {
             languagePickerSurface.frame = frames[0]
@@ -1179,12 +1269,16 @@ private final class DockPanelInteractionView: NSView {
         sideToggle: PanelMovementPresentation,
         verticalSwap: PanelMovementPresentation?,
         taskTextAlignment: PanelMovementPresentation?,
+        legendItems: [DockPanelUsageLegendItem],
         language: AppLanguage,
         resizeFocused: Bool,
         animated: Bool,
         completion: (@MainActor @Sendable () -> Void)?
     ) {
         self.side = side
+        legendView.items = legendItems
+        legendView.alignTrailing = side == .right
+        legendView.isHidden = legendItems.isEmpty || isLanguagePickerVisible
         languagePicker.update(language: language)
         languageButton.image = NSImage(
             systemSymbolName: "globe",
@@ -1338,6 +1432,7 @@ private final class DockPanelInteractionView: NSView {
         permissionButton.isHidden = true
         sideSurface.isHidden = true
         verticalSurface.isHidden = true
+        legendView.isHidden = true
         languagePickerSurface.isHidden = false
         needsLayout = true
     }
@@ -1350,6 +1445,7 @@ private final class DockPanelInteractionView: NSView {
         permissionButton.isHidden = identity != .usageOverview
         permissionSurface.isHidden = permissionButton.isHidden
         sideSurface.isHidden = false
+        legendView.isHidden = legendView.items.isEmpty
         needsLayout = true
     }
 }

@@ -66,15 +66,22 @@ import Testing
 }
 
 @Test func toolBarColorsFollowPanelPolarityAndStayDistinct() {
-    for tool in Tool.allCases {
-        let light = AdaptiveTextColor.barColor(hueDegrees: tool.barHueDegrees, appearance: .dark)
-        let dark = AdaptiveTextColor.barColor(hueDegrees: tool.barHueDegrees, appearance: .light)
+    for tool in Tool.allCases where tool.fixedBarColor == nil {
+        let light = AdaptiveTextColor.barColor(for: tool, appearance: .dark)
+        let dark = AdaptiveTextColor.barColor(for: tool, appearance: .light)
         #expect(light.relativeLuminance > dark.relativeLuminance)
     }
     for appearance in [PanelSemanticAppearance.dark, .light] {
         let colors = Tool.allCases.map {
-            AdaptiveTextColor.barColor(hueDegrees: $0.barHueDegrees, appearance: appearance)
+            AdaptiveTextColor.barColor(for: $0, appearance: appearance)
         }
         #expect(Set(colors.map(\.debugRGBDescription)).count == Tool.allCases.count)
+    }
+}
+
+@Test func codexBarColorIsItsFixedBrandBlueInBothAppearances() {
+    let brandBlue = WallpaperRGB(red: 65 / 255, green: 68 / 255, blue: 245 / 255)
+    for appearance in [PanelSemanticAppearance.dark, .light] {
+        #expect(AdaptiveTextColor.barColor(for: .codex, appearance: appearance) == brandBlue)
     }
 }

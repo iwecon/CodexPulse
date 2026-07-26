@@ -10,6 +10,14 @@ enum Tool: String, CaseIterable, Identifiable, Sendable {
     /// `nil` renders achromatic — OpenCode's monochrome brand shows as white
     /// on dark panels and dark gray on light panels.
     var barHueDegrees: Double? { switch self { case .claude: 55; case .codex: 290; case .opencode: nil } }
+    /// Exact brand color that overrides the polarity-adaptive hue rendering.
+    /// Codex uses its brand blue #4144F5 in both panel appearances.
+    var fixedBarColor: WallpaperRGB? {
+        switch self {
+        case .codex: WallpaperRGB(red: 65 / 255, green: 68 / 255, blue: 245 / 255)
+        case .claude, .opencode: nil
+        }
+    }
 }
 
 enum UsageSourcePolicy {
