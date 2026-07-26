@@ -59,7 +59,8 @@ import Testing
         ),
         usageOverviewPreferredWidth: 412,
         taskActivityPreferredWidth: 528,
-        taskActivityTextAlignment: .right
+        taskActivityTextAlignment: .right,
+        hidesWeeklyLimit: true
     )
 
     expected.save(to: defaults)
@@ -83,6 +84,7 @@ import Testing
     #expect(preferences.usageOverviewPreferredWidth == DockPanelWidthGeometry.defaultWidth)
     #expect(preferences.taskActivityPreferredWidth == DockPanelWidthGeometry.defaultWidth)
     #expect(preferences.taskActivityTextAlignment == .auto)
+    #expect(preferences.hidesWeeklyLimit == false)
 }
 
 @Test func taskActivityTextAlignmentDefaultsToTaskPanelSide() throws {

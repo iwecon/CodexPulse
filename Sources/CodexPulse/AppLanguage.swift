@@ -33,6 +33,16 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    var today: String {
+        switch self {
+        case .simplifiedChineseMainland: "今日"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "今日"
+        case .japanese: "本日"
+        case .korean: "오늘"
+        case .english: "Today"
+        }
+    }
+
     var weeklyLimit: String {
         switch self {
         case .simplifiedChineseMainland: "周限额"
@@ -44,14 +54,25 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var weeklyQuota: String {
+    var hideWeeklyQuota: String {
         switch self {
-        case .simplifiedChineseMainland: "周额度"
-        case .traditionalChineseHongKong: "每週額度"
-        case .traditionalChineseTaiwan: "週額度"
-        case .japanese: "週間割り当て"
-        case .korean: "주간 할당량"
-        case .english: "Weekly quota"
+        case .simplifiedChineseMainland: "隐藏周额度信息"
+        case .traditionalChineseHongKong: "隱藏每週額度資訊"
+        case .traditionalChineseTaiwan: "隱藏週額度資訊"
+        case .japanese: "週間割り当て情報を非表示"
+        case .korean: "주간 할당량 정보 숨기기"
+        case .english: "Hide weekly quota info"
+        }
+    }
+
+    var showWeeklyQuota: String {
+        switch self {
+        case .simplifiedChineseMainland: "显示周额度信息"
+        case .traditionalChineseHongKong: "顯示每週額度資訊"
+        case .traditionalChineseTaiwan: "顯示週額度資訊"
+        case .japanese: "週間割り当て情報を表示"
+        case .korean: "주간 할당량 정보 표시"
+        case .english: "Show weekly quota info"
         }
     }
 

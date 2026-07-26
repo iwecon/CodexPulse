@@ -61,6 +61,30 @@ import Testing
     #expect(snapshot.activeTools.isEmpty)
 }
 
+@Test func weeklyLimitWindowPicksTheWindowClosestToSevenDays() {
+    let now = Date(timeIntervalSince1970: 1_780_000_000)
+    func window(_ minutes: Int) -> RateWindow {
+        RateWindow(name: "codex", used: 40, minutes: minutes, resetsAt: now, observedAt: now)
+    }
+    var snapshot = Snapshot()
+    snapshot.limits = [window(300), window(7_200), window(10_080), window(20_160)]
+
+    #expect(snapshot.weeklyLimitWindow?.minutes == 10_080)
+}
+
+@Test func weeklyLimitWindowIsNilWithoutAWeeklyRateWindow() {
+    let now = Date(timeIntervalSince1970: 1_780_000_000)
+    var snapshot = Snapshot()
+
+    #expect(snapshot.weeklyLimitWindow == nil)
+
+    snapshot.limits = [
+        RateWindow(name: "codex", used: 40, minutes: 300, resetsAt: now, observedAt: now)
+    ]
+
+    #expect(snapshot.weeklyLimitWindow == nil)
+}
+
 @Test func usageSourcePolicyScansEverySource() {
     #expect(UsageSourcePolicy.enabledTools == Set(Tool.allCases))
 }

@@ -127,6 +127,14 @@ struct Snapshot: Sendable {
         }
     }
 
+    /// The Codex rate window closest to seven days. Nil when Codex is not
+    /// installed or the login reports no weekly limit (API-key logins do
+    /// not), in which case the weekly quota section stays hidden.
+    var weeklyLimitWindow: RateWindow? {
+        limits.filter { (5_000...20_000).contains($0.minutes) }
+            .min { abs($0.minutes - 10_080) < abs($1.minutes - 10_080) }
+    }
+
     func hasSameContent(as other: Snapshot) -> Bool {
         usage == other.usage
             && dailyUsage == other.dailyUsage

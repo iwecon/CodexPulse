@@ -214,6 +214,7 @@ final class DockPanelController {
     private var usageOverviewPreferredWidth: CGFloat
     private var taskActivityPreferredWidth: CGFloat
     private var taskActivityTextAlignment: TaskActivityTextAlignment
+    private var hidesWeeklyLimit: Bool
     private var resizeDrag: ResizeDrag?
     private let wallpaperAppearanceSampler = WallpaperAppearanceSampler(
         photoImageLoader: PhotoLibraryWallpaperImageLoader()
@@ -264,6 +265,16 @@ final class DockPanelController {
             guard identity == .taskActivity, let self else { return nil }
             return taskActivityTextAlignment.controlPresentation(language: languageSettings.language)
         },
+        weeklyLimitTogglePresentation: { [weak self] identity in
+            guard identity == .usageOverview, let self,
+                  model.snapshot.weeklyLimitWindow != nil else { return nil }
+            return PanelMovementPresentation(
+                systemImageName: hidesWeeklyLimit ? "eye" : "eye.slash",
+                label: hidesWeeklyLimit
+                    ? languageSettings.language.showWeeklyQuota
+                    : languageSettings.language.hideWeeklyQuota
+            )
+        },
         usageLegendItems: { [weak self] identity in
             guard identity == .usageOverview, let self else { return [] }
             let tools = model.snapshot.activeTools
@@ -293,6 +304,9 @@ final class DockPanelController {
         },
         onToggleTaskTextAlignment: { [weak self] identity in
             self?.toggleTaskTextAlignment(for: identity)
+        },
+        onToggleWeeklyLimitVisibility: { [weak self] identity in
+            self?.toggleWeeklyLimitVisibility(for: identity)
         },
         onManagePermissions: { [weak self] _ in
             self?.managePhotoLibraryPermission()
@@ -327,10 +341,12 @@ final class DockPanelController {
         usageOverviewPreferredWidth = preferences.usageOverviewPreferredWidth
         taskActivityPreferredWidth = preferences.taskActivityPreferredWidth
         taskActivityTextAlignment = preferences.taskActivityTextAlignment
+        hidesWeeklyLimit = preferences.hidesWeeklyLimit
         let presentationState = DockPanelPresentationState()
         presentationState.usageSide = preferences.arrangement.usageSide
         presentationState.taskSide = preferences.arrangement.taskSide
         presentationState.taskActivityTextAlignment = preferences.taskActivityTextAlignment
+        presentationState.hidesWeeklyLimit = preferences.hidesWeeklyLimit
         self.presentationState = presentationState
         leftPanel = Self.panel(
             rootView: AnyView(RecentUsageView(
@@ -856,12 +872,20 @@ final class DockPanelController {
         positionPanels()
     }
 
+    private func toggleWeeklyLimitVisibility(for identity: DockPanelIdentity) {
+        guard identity == .usageOverview else { return }
+        hidesWeeklyLimit.toggle()
+        presentationState.hidesWeeklyLimit = hidesWeeklyLimit
+        savePreferences()
+    }
+
     private func savePreferences() {
         DockPanelPreferences(
             arrangement: arrangement,
             usageOverviewPreferredWidth: usageOverviewPreferredWidth,
             taskActivityPreferredWidth: taskActivityPreferredWidth,
-            taskActivityTextAlignment: taskActivityTextAlignment
+            taskActivityTextAlignment: taskActivityTextAlignment,
+            hidesWeeklyLimit: hidesWeeklyLimit
         ).save(to: defaults)
     }
 
@@ -954,9 +978,13 @@ struct RecentUsageView: View {
     private var maximum: Int { max(days.map(\.total).max() ?? 0, 1) }
     private var total: Int { days.reduce(0) { $0 + $1.total } }
     private var activeTools: [Tool] { model.snapshot.activeTools }
-    /// Codex is the only source with local rate-limit data; hide the quota
-    /// section when Codex is dormant but keep it as the empty-state anchor.
-    private var showsWeeklyLimit: Bool { activeTools.isEmpty || activeTools.contains(.codex) }
+    /// The quota section only renders when Codex actually reports a weekly
+    /// rate window — absent installs and API-key logins report none — and
+    /// the user has not hidden it from the control group. When absent the
+    /// trend stretches over the vacated width.
+    private var showsWeeklyLimit: Bool {
+        !presentation.hidesWeeklyLimit && model.snapshot.weeklyLimitWindow != nil
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -1063,12 +1091,14 @@ struct RecentUsageView: View {
 
     private var legendView: some View {
         HStack(spacing: 5) {
+            Text(languageSettings.language.today)
+                .dockPanelTextShadow()
             ForEach(activeTools) { tool in
                 HStack(spacing: 2) {
                     Circle()
                         .fill(barColor(for: tool))
                         .frame(width: 4, height: 4)
-                    Text(UsageModel.compact(days.reduce(0) { $0 + ($1.usage[tool]?.total ?? 0) }))
+                    Text(UsageModel.compact(days.last?.usage[tool]?.total ?? 0))
                         .dockPanelTextShadow()
                         .monospacedDigit()
                 }
@@ -1085,12 +1115,14 @@ struct RecentUsageView: View {
             Text(days.first.map { languageSettings.language.shortDate($0.date) } ?? "—")
                 .dockPanelTextShadow()
             Spacer()
-            HStack(spacing: 3) {
-                Text(days.last.map { languageSettings.language.shortDate($0.date) } ?? "—")
-                    .dockPanelTextShadow()
-                Text(UsageModel.compact(days.last?.total ?? 0))
-                    .dockPanelTextShadow()
-                    .monospacedDigit()
+            if let last = days.last {
+                HStack(spacing: 3) {
+                    Text(languageSettings.language.shortDate(last.date))
+                        .dockPanelTextShadow()
+                    Text(UsageModel.compact(last.total))
+                        .dockPanelTextShadow()
+                        .monospacedDigit()
+                }
             }
         }
         .font(.system(size: 8))
@@ -1148,11 +1180,7 @@ struct WeeklyLimitView: View {
     let quotaBarColor: Color
     @Bindable var languageSettings: AppLanguageSettings
 
-    private var weekly: RateWindow? {
-        model.snapshot.limits
-            .filter { (5_000...20_000).contains($0.minutes) }
-            .min { abs($0.minutes - 10_080) < abs($1.minutes - 10_080) }
-    }
+    private var weekly: RateWindow? { model.snapshot.weeklyLimitWindow }
 
     var body: some View {
         if let weekly {
@@ -1199,18 +1227,6 @@ struct WeeklyLimitView: View {
                     .foregroundStyle(.secondary)
             }
             .font(.system(size: 8))
-            .frame(maxWidth: .infinity, alignment: alignTrailing ? .trailing : .leading)
-        } else {
-            VStack(alignment: alignTrailing ? .trailing : .leading, spacing: 2) {
-                Text(languageSettings.language.weeklyQuota)
-                    .dockPanelTextShadow()
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                Text(languageSettings.language.noData)
-                    .dockPanelTextShadow()
-                    .foregroundStyle(.secondary)
-            }
-            .font(.system(size: 9))
             .frame(maxWidth: .infinity, alignment: alignTrailing ? .trailing : .leading)
         }
     }
