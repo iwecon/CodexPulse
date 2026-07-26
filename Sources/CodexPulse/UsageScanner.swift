@@ -20,9 +20,13 @@ actor UsageScanner {
         var messages: [String: ClaudeRecord] = [:]
     }
 
+    private struct CodexRecord {
+        let usage: Usage
+        let date: Date?
+    }
+
     private struct CodexFileResult {
-        var total = Usage.zero
-        var daily: [Date: Usage] = [:]
+        var records: [String: CodexRecord] = [:]
         var limits: [Int: RateWindow] = [:]
     }
 
@@ -154,13 +158,18 @@ actor UsageScanner {
     }
 
     private func scanCodex() -> (Usage, [Date: Usage], [RateWindow], String?) {
-        let root = home.appending(path: ".codex/sessions")
-        guard FileManager.default.fileExists(atPath: root.path) else {
+        // Codex Desktop moves closed threads to archived_sessions; both
+        // directories together hold the complete usage history.
+        let roots = [
+            home.appending(path: ".codex/sessions"),
+            home.appending(path: ".codex/archived_sessions"),
+        ].filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard !roots.isEmpty else {
             codexCache.removeAll(keepingCapacity: false)
             return (.zero, [:], [], "未找到 ~/.codex/sessions")
         }
 
-        let files = jsonFiles(in: root)
+        let files = roots.flatMap { jsonFiles(in: $0) }
         let livePaths = Set(files.map { $0.0.path })
         codexCache = codexCache.filter { livePaths.contains($0.key) }
         for (file, version) in files where codexCache[file.path]?.version != version {
@@ -168,16 +177,28 @@ actor UsageScanner {
             statistics.parsedJSONFiles += 1
         }
 
-        var total = Usage.zero
-        var daily: [Date: Usage] = [:]
+        // Subagent rollouts replay the parent thread's token_count history under
+        // fresh timestamps. Merge records by identity and keep the earliest
+        // observation so replayed events are counted once, on their original day.
+        var seen: [String: CodexRecord] = [:]
         var limits: [Int: RateWindow] = [:]
         for cached in codexCache.values {
-            total.add(cached.value.total)
-            for (date, usage) in cached.value.daily { daily[date, default: .zero].add(usage) }
+            for (key, record) in cached.value.records {
+                guard let existing = seen[key] else { seen[key] = record; continue }
+                if let date = record.date, existing.date.map({ date < $0 }) ?? true {
+                    seen[key] = record
+                }
+            }
             for (minutes, window) in cached.value.limits
             where window.observedAt >= (limits[minutes]?.observedAt ?? .distantPast) {
                 limits[minutes] = window
             }
+        }
+        var total = Usage.zero
+        var daily: [Date: Usage] = [:]
+        for record in seen.values {
+            total.add(record.usage)
+            if let date = record.date { daily[Self.day(date), default: .zero].add(record.usage) }
         }
         return (total, daily, limits.values.sorted { $0.minutes < $1.minutes }, nil)
     }
@@ -186,8 +207,13 @@ actor UsageScanner {
         var result = CodexFileResult()
         var model = "gpt-5"
         var previous: Usage?
+        var sessionID: String?
         try? Self.forEachJSONLine(in: file) { line in
             guard let root = Self.object(line) else { return }
+            if root["type"] as? String == "session_meta", sessionID == nil,
+               let payload = root["payload"] as? [String: Any] {
+                sessionID = (payload["session_id"] as? String) ?? (payload["id"] as? String)
+            }
             if root["type"] as? String == "turn_context", let payload = root["payload"] as? [String: Any] {
                 model = payload["model"] as? String ?? model
             }
@@ -197,12 +223,27 @@ actor UsageScanner {
             if let info = payload["info"] as? [String: Any],
                let tokens = info["total_token_usage"] as? [String: Any] {
                 let current = Self.codexCumulativeUsage(tokens)
-                var delta = Self.codexDelta(current: current, previous: previous)
+                var delta: Usage
+                if let previous {
+                    delta = Self.codexDelta(current: current, previous: previous)
+                } else if let last = info["last_token_usage"] as? [String: Any] {
+                    // Subagent rollouts inherit the parent thread's cumulative
+                    // counter, so the first event's total is not this file's
+                    // usage — only the last request's increment is.
+                    delta = Self.codexCumulativeUsage(last)
+                } else {
+                    delta = current
+                }
                 delta.costUSD = Pricing.forModel(model).cost(delta)
                 if delta.total > 0 {
-                    result.total.add(delta)
-                    if let date = Self.date(root["timestamp"]) {
-                        result.daily[Self.day(date), default: .zero].add(delta)
+                    let key = "\(sessionID ?? file.path)|\(current.input)|\(current.cacheRead)|\(current.output)"
+                    let date = Self.date(root["timestamp"])
+                    if let existing = result.records[key] {
+                        if let date, existing.date.map({ date < $0 }) ?? true {
+                            result.records[key] = CodexRecord(usage: delta, date: date)
+                        }
+                    } else {
+                        result.records[key] = CodexRecord(usage: delta, date: date)
                     }
                 }
                 previous = current

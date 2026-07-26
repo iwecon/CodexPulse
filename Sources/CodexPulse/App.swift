@@ -906,11 +906,11 @@ struct RecentUsageView: View {
         HStack(spacing: 6) {
             if presentation.usageSide == .left {
                 trendView
-                Divider().frame(height: 34)
+                Divider().frame(height: 24)
                 WeeklyLimitView(model: model, alignTrailing: false, languageSettings: languageSettings)
             } else {
                 WeeklyLimitView(model: model, alignTrailing: true, languageSettings: languageSettings)
-                Divider().frame(height: 34)
+                Divider().frame(height: 24)
                 trendView
             }
         }
@@ -1029,8 +1029,10 @@ struct WeeklyLimitView: View {
                     Spacer(minLength: 2)
                     Text(languageSettings.language.usedPercent(Int(used.rounded())))
                         .dockPanelTextShadow()
+                        .foregroundStyle(.secondary)
                     Text(languageSettings.language.remainingPercent(Int((100 - used).rounded())))
                         .dockPanelTextShadow()
+                        .foregroundStyle(.secondary)
                 }
                 .font(.system(size: 9))
                 .lineLimit(1)
@@ -1047,17 +1049,19 @@ struct WeeklyLimitView: View {
                     Text(languageSettings.language.resetText(weekly.resetsAt))
                         .dockPanelTextShadow()
                         .lineLimit(1)
+                        .foregroundStyle(.secondary)
                     Spacer(minLength: 2)
                     AverageDailyAvailableText(
                         used: used,
                         resetsAt: weekly.resetsAt,
                         language: languageSettings.language
                     )
+                    .foregroundStyle(.secondary)
                 }
                 CountdownText(reset: weekly.resetsAt, language: languageSettings.language)
+                    .foregroundStyle(.secondary)
             }
             .font(.system(size: 8))
-            .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: alignTrailing ? .trailing : .leading)
         } else {
             VStack(alignment: alignTrailing ? .trailing : .leading, spacing: 2) {

@@ -117,6 +117,67 @@ import Foundation
     #expect(usage.total == 35)
 }
 
+@Test func codexSubagentFirstEventCountsOnlyLastTokenUsage() async throws {
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let sessions = home.appending(path: ".codex/sessions", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    // A subagent rollout inherits the parent thread's cumulative counter, so the
+    // first total_token_usage is huge; last_token_usage holds the real increment.
+    let lines = [
+        #"{"timestamp":"2026-07-23T10:00:00Z","type":"session_meta","payload":{"session_id":"parent-1","id":"child-1"}}"#,
+        #"{"timestamp":"2026-07-23T10:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":25000100,"cached_input_tokens":25000000,"output_tokens":500},"last_token_usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":10}}}}"#,
+        #"{"timestamp":"2026-07-23T10:00:02Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":25000400,"cached_input_tokens":25000200,"output_tokens":550},"last_token_usage":{"input_tokens":300,"cached_input_tokens":200,"output_tokens":50}}}}"#,
+    ]
+    try (lines.joined(separator: "\n") + "\n").data(using: .utf8)!
+        .write(to: sessions.appending(path: "child.jsonl"))
+
+    let snapshot = await UsageScanner(home: home, enabledTools: [.codex]).scan()
+
+    // First event: input 100-80=20, cacheRead 80, output 10 (not the 25M baseline).
+    // Second event: cumulative delta input 100, cacheRead 200, output 50.
+    #expect(snapshot.usage[.codex]?.input == 120)
+    #expect(snapshot.usage[.codex]?.cacheRead == 280)
+    #expect(snapshot.usage[.codex]?.output == 60)
+    #expect(snapshot.usage[.codex]?.total == 460)
+}
+
+@Test func codexReplayedEventsAcrossFilesAreCountedOnceWithEarliestDate() async throws {
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let sessions = home.appending(path: ".codex/sessions", directoryHint: .isDirectory)
+    let archived = home.appending(path: ".codex/archived_sessions", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: archived, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    let event = #""payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":50,"output_tokens":30},"last_token_usage":{"input_tokens":200,"cached_input_tokens":50,"output_tokens":30}}}"#
+    let parent = [
+        #"{"timestamp":"2026-07-20T09:00:00Z","type":"session_meta","payload":{"session_id":"thread-1","id":"thread-1"}}"#,
+        #"{"timestamp":"2026-07-20T09:00:01Z","type":"event_msg",\#(event)}"#,
+    ]
+    // An archived subagent rollout replays the same event under a fresh
+    // timestamp on a later day.
+    let child = [
+        #"{"timestamp":"2026-07-21T08:00:00Z","type":"session_meta","payload":{"session_id":"thread-1","id":"thread-2"}}"#,
+        #"{"timestamp":"2026-07-21T08:00:00Z","type":"event_msg",\#(event)}"#,
+    ]
+    try (parent.joined(separator: "\n") + "\n").data(using: .utf8)!
+        .write(to: sessions.appending(path: "parent.jsonl"))
+    try (child.joined(separator: "\n") + "\n").data(using: .utf8)!
+        .write(to: archived.appending(path: "child.jsonl"))
+
+    let snapshot = await UsageScanner(home: home, enabledTools: [.codex]).scan()
+
+    #expect(snapshot.usage[.codex]?.total == 230)
+    #expect(snapshot.usage[.codex]?.requests == 1)
+    let original = Calendar.current.startOfDay(for: try Date("2026-07-20T09:00:01Z", strategy: .iso8601))
+    #expect(snapshot.dailyUsage.reduce(0) { $0 + $1.total } == 230)
+    #expect(snapshot.dailyUsage.first(where: { $0.date == original })?.total == 230)
+}
+
 @Test func completedTaskRemainsVisibleForTenMinutes() {
     let start = #"{"timestamp":"2026-07-23T10:00:00Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","started_at":1784800800}}"#
     let completion = #"{"timestamp":"2026-07-23T10:01:00Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1","started_at":1784800800,"completed_at":1784800860}}"#
