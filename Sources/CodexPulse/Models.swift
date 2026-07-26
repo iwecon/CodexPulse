@@ -62,7 +62,6 @@ struct DailyUsage: Identifiable, Sendable, Equatable {
 }
 
 struct TaskExecution: Identifiable, Sendable, Equatable {
-    static let completedDimmingDelay: TimeInterval = 3 * 60
     static let completedVisibilityDuration: TimeInterval = 10 * 60
 
     let id: String
@@ -81,11 +80,6 @@ struct TaskExecution: Identifiable, Sendable, Equatable {
     var completedAt: Date?
 
     var isCompleted: Bool { completedAt != nil }
-
-    func shouldDimMessage(at now: Date) -> Bool {
-        guard let completedAt else { return false }
-        return now.timeIntervalSince(completedAt) > Self.completedDimmingDelay
-    }
 }
 
 enum TaskEventKind: Sendable {
@@ -130,16 +124,24 @@ struct Snapshot: Sendable {
     /// The Codex rate window closest to seven days. Nil when Codex is not
     /// installed or the login reports no weekly limit (API-key logins do
     /// not), in which case the weekly quota section stays hidden.
-    var weeklyLimitWindow: RateWindow? {
+    var weeklyLimitWindow: RateWindow? { Self.weeklyLimitWindow(in: limits) }
+
+    static func weeklyLimitWindow(in limits: [RateWindow]) -> RateWindow? {
         limits.filter { (5_000...20_000).contains($0.minutes) }
             .min { abs($0.minutes - 10_080) < abs($1.minutes - 10_080) }
     }
+
+    /// Codex tokens consumed inside the current weekly-limit window
+    /// (`resetsAt` minus the window length), matching the used-percent bar.
+    /// Nil when no weekly window is reported.
+    var codexTokensInWeeklyWindow: Int?
 
     func hasSameContent(as other: Snapshot) -> Bool {
         usage == other.usage
             && dailyUsage == other.dailyUsage
             && limits == other.limits
             && errors == other.errors
+            && codexTokensInWeeklyWindow == other.codexTokensInWeeklyWindow
     }
 }
 

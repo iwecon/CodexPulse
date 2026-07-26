@@ -65,3 +65,25 @@ import Testing
     #expect(WeeklyLimitCountdown.format(reset: reset, now: now, language: .japanese) == "残り 1時間 1分")
     #expect(AppLanguage.english.shortDate(now) != AppLanguage.japanese.shortDate(now))
 }
+
+@Test func compactCountdownDropsTheLeadingLabel() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let reset = now.addingTimeInterval(3_661)
+
+    #expect(WeeklyLimitCountdown.format(reset: reset, now: now, compact: true) == "1小时 1分钟")
+    #expect(WeeklyLimitCountdown.format(reset: reset, now: now, language: .english, compact: true) == "1h 1m")
+    #expect(WeeklyLimitCountdown.format(reset: reset, now: now, language: .korean, compact: true) == "1시간 1분")
+
+    let underMinute = now.addingTimeInterval(30)
+    #expect(WeeklyLimitCountdown.format(reset: underMinute, now: now, compact: true) == "<1分钟")
+}
+
+@Test func shortResetTextOmitsTheTimeOfDay() {
+    let date = Date(timeIntervalSince1970: 1_800_000_000)
+
+    let full = AppLanguage.simplifiedChineseMainland.resetText(date)
+    let short = AppLanguage.simplifiedChineseMainland.resetShortText(date)
+    #expect(short.hasPrefix("重置 "))
+    #expect(short.count < full.count)
+    #expect(!short.contains(":"))
+}

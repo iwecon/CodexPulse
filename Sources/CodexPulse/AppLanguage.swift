@@ -87,6 +87,16 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    var taskLoading: String {
+        switch self {
+        case .simplifiedChineseMainland: "加载中…"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "載入中…"
+        case .japanese: "読み込み中…"
+        case .korean: "불러오는 중…"
+        case .english: "Loading…"
+        }
+    }
+
     var noRecentTasks: String {
         switch self {
         case .simplifiedChineseMainland: "近10分钟没有活动任务"
@@ -336,6 +346,18 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Narrow-panel variant of `resetText`: date only, no time of day.
+    func resetShortText(_ date: Date) -> String {
+        let value = date.formatted(Date.FormatStyle.dateTime.locale(locale).month().day())
+        return switch self {
+        case .simplifiedChineseMainland: "重置 \(value)"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "重設 \(value)"
+        case .japanese: "リセット \(value)"
+        case .korean: "재설정 \(value)"
+        case .english: "Resets \(value)"
+        }
+    }
+
     func averageDailyAvailable(_ value: Double) -> String {
         switch self {
         case .simplifiedChineseMainland: String(format: "日均可用 %.1f%%", locale: locale, value)
@@ -343,6 +365,26 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         case .japanese: String(format: "1日平均 %.1f%%", locale: locale, value)
         case .korean: String(format: "일평균 사용 가능 %.1f%%", locale: locale, value)
         case .english: String(format: "Daily avg %.1f%%", locale: locale, value)
+        }
+    }
+
+    var loadingUsage: String {
+        switch self {
+        case .simplifiedChineseMainland: "用量信息加载中，请稍后"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "用量資訊載入中，請稍候"
+        case .japanese: "使用量を読み込み中です。お待ちください"
+        case .korean: "사용량 불러오는 중입니다. 잠시만 기다려 주세요"
+        case .english: "Loading usage, please wait…"
+        }
+    }
+
+    func weeklyWindowConsumedTokens(_ value: String) -> String {
+        switch self {
+        case .simplifiedChineseMainland: "本周期消耗 \(value)"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "本週期消耗 \(value)"
+        case .japanese: "今サイクル消費 \(value)"
+        case .korean: "이번 주기 사용 \(value)"
+        case .english: "This cycle \(value)"
         }
     }
 
@@ -373,6 +415,37 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
             if hours > 0 { return "Remaining \(hours)h \(minutes)m" }
             if minutes > 0 { return "Remaining \(minutes)m" }
             return "Less than 1m remaining"
+        }
+    }
+
+    /// Narrow-panel variant of `countdown`: same units, no leading label.
+    func countdownCompact(days: Int, hours: Int, minutes: Int) -> String {
+        switch self {
+        case .simplifiedChineseMainland:
+            if days > 0 { return "\(days)天 \(hours)小时" }
+            if hours > 0 { return "\(hours)小时 \(minutes)分钟" }
+            if minutes > 0 { return "\(minutes)分钟" }
+            return "<1分钟"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan:
+            if days > 0 { return "\(days)日 \(hours)小時" }
+            if hours > 0 { return "\(hours)小時 \(minutes)分鐘" }
+            if minutes > 0 { return "\(minutes)分鐘" }
+            return "<1分鐘"
+        case .japanese:
+            if days > 0 { return "\(days)日 \(hours)時間" }
+            if hours > 0 { return "\(hours)時間 \(minutes)分" }
+            if minutes > 0 { return "\(minutes)分" }
+            return "1分未満"
+        case .korean:
+            if days > 0 { return "\(days)일 \(hours)시간" }
+            if hours > 0 { return "\(hours)시간 \(minutes)분" }
+            if minutes > 0 { return "\(minutes)분" }
+            return "1분 미만"
+        case .english:
+            if days > 0 { return "\(days)d \(hours)h" }
+            if hours > 0 { return "\(hours)h \(minutes)m" }
+            if minutes > 0 { return "\(minutes)m" }
+            return "<1m"
         }
     }
 

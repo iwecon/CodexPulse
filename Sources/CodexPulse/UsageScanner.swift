@@ -65,14 +65,15 @@ actor UsageScanner {
 
     func scan() async -> Snapshot {
         let c = enabledTools.contains(.claude) ? scanClaude() : (.zero, [:], nil)
-        let x = enabledTools.contains(.codex) ? scanCodex() : (.zero, [:], [], nil)
+        let x = enabledTools.contains(.codex) ? scanCodex() : (.zero, [:], [], nil, nil)
         let o = enabledTools.contains(.opencode) ? scanOpenCode() : (.zero, [:], nil)
         var result = Snapshot()
         if enabledTools.contains(.claude) {
             result.usage[.claude] = c.0; result.errors[.claude] = c.2
         }
         if enabledTools.contains(.codex) {
-            result.usage[.codex] = x.0; result.errors[.codex] = x.3; result.limits = x.2
+            result.usage[.codex] = x.0; result.errors[.codex] = x.4; result.limits = x.2
+            result.codexTokensInWeeklyWindow = x.3
         }
         if enabledTools.contains(.opencode) {
             result.usage[.opencode] = o.0; result.errors[.opencode] = o.2
@@ -157,7 +158,7 @@ actor UsageScanner {
         return result
     }
 
-    private func scanCodex() -> (Usage, [Date: Usage], [RateWindow], String?) {
+    private func scanCodex() -> (Usage, [Date: Usage], [RateWindow], Int?, String?) {
         // Codex Desktop moves closed threads to archived_sessions; both
         // directories together hold the complete usage history.
         let roots = [
@@ -166,7 +167,7 @@ actor UsageScanner {
         ].filter { FileManager.default.fileExists(atPath: $0.path) }
         guard !roots.isEmpty else {
             codexCache.removeAll(keepingCapacity: false)
-            return (.zero, [:], [], "未找到 ~/.codex/sessions")
+            return (.zero, [:], [], nil, "未找到 ~/.codex/sessions")
         }
 
         let files = roots.flatMap { jsonFiles(in: $0) }
@@ -200,7 +201,16 @@ actor UsageScanner {
             total.add(record.usage)
             if let date = record.date { daily[Self.day(date), default: .zero].add(record.usage) }
         }
-        return (total, daily, limits.values.sorted { $0.minutes < $1.minutes }, nil)
+        let sortedLimits = limits.values.sorted { $0.minutes < $1.minutes }
+        var windowTokens: Int?
+        if let weekly = Snapshot.weeklyLimitWindow(in: sortedLimits) {
+            let windowStart = weekly.resetsAt.addingTimeInterval(-Double(weekly.minutes) * 60)
+            windowTokens = seen.values.reduce(0) { sum, record in
+                guard let date = record.date, date >= windowStart else { return sum }
+                return sum + record.usage.total
+            }
+        }
+        return (total, daily, sortedLimits, windowTokens, nil)
     }
 
     private func parseCodexFile(_ file: URL) -> CodexFileResult {

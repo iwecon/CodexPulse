@@ -178,6 +178,54 @@ import Foundation
     #expect(snapshot.dailyUsage.first(where: { $0.date == original })?.total == 230)
 }
 
+@Test func codexWeeklyWindowTokensCountOnlyRecordsInsideTheResetWindow() async throws {
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let sessions = home.appending(path: ".codex/sessions", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    // resets_at 2026-07-27T00:00:00Z with a 10 080-minute window puts the
+    // window start at 2026-07-20T00:00:00Z.
+    let outside = [
+        #"{"timestamp":"2026-07-19T23:00:00Z","type":"session_meta","payload":{"session_id":"old","id":"old"}}"#,
+        #"{"timestamp":"2026-07-19T23:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":0},"last_token_usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":0}}}}"#,
+    ]
+    let inside = [
+        #"{"timestamp":"2026-07-21T10:00:00Z","type":"session_meta","payload":{"session_id":"new","id":"new"}}"#,
+        #"{"timestamp":"2026-07-21T10:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":50,"output_tokens":30},"last_token_usage":{"input_tokens":200,"cached_input_tokens":50,"output_tokens":30}},"rate_limits":{"secondary":{"window_minutes":10080,"resets_at":1785110400,"used_percent":40}}}}"#,
+    ]
+    try (outside.joined(separator: "\n") + "\n").data(using: .utf8)!
+        .write(to: sessions.appending(path: "outside.jsonl"))
+    try (inside.joined(separator: "\n") + "\n").data(using: .utf8)!
+        .write(to: sessions.appending(path: "inside.jsonl"))
+
+    let snapshot = await UsageScanner(home: home, enabledTools: [.codex]).scan()
+
+    #expect(snapshot.usage[.codex]?.total == 330)
+    #expect(snapshot.codexTokensInWeeklyWindow == 230)
+}
+
+@Test func codexWeeklyWindowTokensAreNilWithoutAWeeklyRateWindow() async throws {
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let sessions = home.appending(path: ".codex/sessions", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    let lines = [
+        #"{"timestamp":"2026-07-21T10:00:00Z","type":"session_meta","payload":{"session_id":"s","id":"s"}}"#,
+        #"{"timestamp":"2026-07-21T10:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":5},"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":5}},"rate_limits":{"primary":{"window_minutes":300,"resets_at":1785110400,"used_percent":10}}}}"#,
+    ]
+    try (lines.joined(separator: "\n") + "\n").data(using: .utf8)!
+        .write(to: sessions.appending(path: "session.jsonl"))
+
+    let snapshot = await UsageScanner(home: home, enabledTools: [.codex]).scan()
+
+    #expect(snapshot.usage[.codex]?.total == 15)
+    #expect(snapshot.codexTokensInWeeklyWindow == nil)
+}
+
 @Test func completedTaskRemainsVisibleForTenMinutes() {
     let start = #"{"timestamp":"2026-07-23T10:00:00Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","started_at":1784800800}}"#
     let completion = #"{"timestamp":"2026-07-23T10:01:00Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1","started_at":1784800800,"completed_at":1784800860}}"#

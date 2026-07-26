@@ -88,6 +88,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @MainActor @Observable
 final class UsageModel {
     var snapshot = Snapshot()
+    /// False until the first scan completes, while the panel shows a
+    /// loading indicator instead of an empty trend.
+    private(set) var hasLoadedSnapshot = false
     var tasks: [TaskExecution] = []
     private(set) var isTaskStatusAnimationPaused = false
     private let scanner = UsageScanner()
@@ -183,6 +186,7 @@ final class UsageModel {
         let newSnapshot = await scanner.scan()
         guard !Task.isCancelled, refreshGate.allowsRefresh else { return }
         if !snapshot.hasSameContent(as: newSnapshot) { snapshot = newSnapshot }
+        hasLoadedSnapshot = true
     }
 
     nonisolated static func compact(_ number: Int) -> String {
@@ -987,6 +991,28 @@ struct RecentUsageView: View {
     }
 
     var body: some View {
+        Group {
+            if model.hasLoadedSnapshot {
+                loadedContent
+            } else {
+                loadingView
+            }
+        }
+        .padding(.horizontal, DockPanelContentLayout.horizontalInset)
+        .padding(.bottom, DockPanelContentLayout.bottomInset)
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: .infinity,
+            alignment: presentation.usageSide == .left ? .bottomLeading : .bottomTrailing
+        )
+        .dockPanelTextColor(presentation.usageTextColor)
+        .environment(
+            \.colorScheme,
+            presentation.usageAppearance == .dark ? .dark : .light
+        )
+    }
+
+    private var loadedContent: some View {
         HStack(spacing: 6) {
             if presentation.usageSide == .left {
                 trendView
@@ -1012,18 +1038,19 @@ struct RecentUsageView: View {
                 trendView
             }
         }
-        .padding(.horizontal, DockPanelContentLayout.horizontalInset)
-        .padding(.bottom, DockPanelContentLayout.bottomInset)
-        .frame(
-            maxWidth: .infinity,
-            maxHeight: .infinity,
-            alignment: presentation.usageSide == .left ? .bottomLeading : .bottomTrailing
-        )
-        .dockPanelTextColor(presentation.usageTextColor)
-        .environment(
-            \.colorScheme,
-            presentation.usageAppearance == .dark ? .dark : .light
-        )
+    }
+
+    private var loadingView: some View {
+        VStack(spacing: 4) {
+            ProgressView()
+                .controlSize(.small)
+            Text(languageSettings.language.loadingUsage)
+                .dockPanelTextShadow()
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(minWidth: 116)
     }
 
     private var trendView: some View {
@@ -1046,7 +1073,7 @@ struct RecentUsageView: View {
                 }
             }
             .frame(height: 21, alignment: .bottom)
-            if activeTools.count > 1 {
+            if activeTools.count > 1, !legendTools.isEmpty {
                 legendView
             } else {
                 dateRangeView
@@ -1089,11 +1116,17 @@ struct RecentUsageView: View {
         return Color(custom)
     }
 
+    /// Legend entries are limited to tools that consumed tokens today;
+    /// idle tools stay in the trend bars but drop out of the today row.
+    private var legendTools: [Tool] {
+        activeTools.filter { (days.last?.usage[$0]?.total ?? 0) > 0 }
+    }
+
     private var legendView: some View {
         HStack(spacing: 5) {
             Text(languageSettings.language.today)
                 .dockPanelTextShadow()
-            ForEach(activeTools) { tool in
+            ForEach(legendTools) { tool in
                 HStack(spacing: 2) {
                     Circle()
                         .fill(barColor(for: tool))
@@ -1162,14 +1195,17 @@ struct WeeklyLimitView: View {
     private struct CountdownText: View {
         let reset: Date
         let language: AppLanguage
+        var compact = false
 
         var body: some View {
             TimelineView(.periodic(from: .now, by: 60)) { context in
-                Text(WeeklyLimitCountdown.format(reset: reset, now: context.date, language: language))
-                    .dockPanelTextShadow()
-                    .fontWeight(.semibold)
-                    .monospacedDigit()
-                    .lineLimit(1)
+                Text(WeeklyLimitCountdown.format(
+                    reset: reset, now: context.date, language: language, compact: compact
+                ))
+                .dockPanelTextShadow()
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .lineLimit(1)
             }
         }
     }
@@ -1182,6 +1218,13 @@ struct WeeklyLimitView: View {
 
     private var weekly: RateWindow? { model.snapshot.weeklyLimitWindow }
 
+    /// Below this measured width the quota texts switch to their compact
+    /// forms: percent without labels, date without time, countdown without
+    /// its leading label, and the consumed tokens as a bare figure.
+    private static let compactWidthThreshold: CGFloat = 150
+    @State private var sectionWidth: CGFloat = .infinity
+    private var isCompact: Bool { sectionWidth < Self.compactWidthThreshold }
+
     var body: some View {
         if let weekly {
             let used = min(max(weekly.used, 0), 100)
@@ -1192,12 +1235,18 @@ struct WeeklyLimitView: View {
                         .font(.headline)
                         .fontWeight(.semibold)
                     Spacer(minLength: 2)
-                    Text(languageSettings.language.usedPercent(Int(used.rounded())))
-                        .dockPanelTextShadow()
-                        .foregroundStyle(.secondary)
-                    Text(languageSettings.language.remainingPercent(Int((100 - used).rounded())))
-                        .dockPanelTextShadow()
-                        .foregroundStyle(.secondary)
+                    if isCompact {
+                        Text(verbatim: "\(Int(used.rounded()))%")
+                            .dockPanelTextShadow()
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(languageSettings.language.usedPercent(Int(used.rounded())))
+                            .dockPanelTextShadow()
+                            .foregroundStyle(.secondary)
+                        Text(languageSettings.language.remainingPercent(Int((100 - used).rounded())))
+                            .dockPanelTextShadow()
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .font(.system(size: 9))
                 .lineLimit(1)
@@ -1211,23 +1260,50 @@ struct WeeklyLimitView: View {
                 }
                 .frame(height: 4)
                 HStack(spacing: 4) {
-                    Text(languageSettings.language.resetText(weekly.resetsAt))
+                    Text(isCompact
+                        ? languageSettings.language.resetShortText(weekly.resetsAt)
+                        : languageSettings.language.resetText(weekly.resetsAt))
                         .dockPanelTextShadow()
                         .lineLimit(1)
                         .foregroundStyle(.secondary)
-                    Spacer(minLength: 2)
-                    AverageDailyAvailableText(
-                        used: used,
-                        resetsAt: weekly.resetsAt,
-                        language: languageSettings.language
+                    if !isCompact {
+                        Spacer(minLength: 2)
+                        AverageDailyAvailableText(
+                            used: used,
+                            resetsAt: weekly.resetsAt,
+                            language: languageSettings.language
+                        )
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                HStack(spacing: 4) {
+                    CountdownText(
+                        reset: weekly.resetsAt,
+                        language: languageSettings.language,
+                        compact: isCompact
                     )
                     .foregroundStyle(.secondary)
+                    Spacer(minLength: 2)
+                    if let windowTokens = model.snapshot.codexTokensInWeeklyWindow {
+                        Text(isCompact
+                            ? UsageModel.compact(windowTokens)
+                            : languageSettings.language.weeklyWindowConsumedTokens(
+                                UsageModel.compact(windowTokens)
+                            ))
+                        .dockPanelTextShadow()
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                    }
                 }
-                CountdownText(reset: weekly.resetsAt, language: languageSettings.language)
-                    .foregroundStyle(.secondary)
             }
             .font(.system(size: 8))
             .frame(maxWidth: .infinity, alignment: alignTrailing ? .trailing : .leading)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { width in
+                sectionWidth = width
+            }
         }
     }
 }
@@ -1236,13 +1312,16 @@ enum WeeklyLimitCountdown {
     static func format(
         reset: Date,
         now: Date,
-        language: AppLanguage = .simplifiedChineseMainland
+        language: AppLanguage = .simplifiedChineseMainland,
+        compact: Bool = false
     ) -> String {
         let totalSeconds = max(0, Int(reset.timeIntervalSince(now)))
         let days = totalSeconds / 86_400
         let hours = (totalSeconds % 86_400) / 3_600
         let minutes = (totalSeconds % 3_600) / 60
-        return language.countdown(days: days, hours: hours, minutes: minutes)
+        return compact
+            ? language.countdownCompact(days: days, hours: hours, minutes: minutes)
+            : language.countdown(days: days, hours: hours, minutes: minutes)
     }
 }
 
@@ -1358,16 +1437,13 @@ struct TaskExecutionView: View {
         let textAlignment: TextAlignment
 
         var body: some View {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(task.latestUserMessage.isEmpty ? "—" : task.latestUserMessage)
-                    .dockPanelTextShadow()
-                    .foregroundStyle(.secondary)
-                    .opacity(task.shouldDimMessage(at: context.date) ? 0.45 : 1)
-                    .lineLimit(2)
-                    .multilineTextAlignment(textAlignment)
-                    .truncationMode(.tail)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(task.latestUserMessage.isEmpty ? "—" : task.latestUserMessage)
+                .dockPanelTextShadow()
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .multilineTextAlignment(textAlignment)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
