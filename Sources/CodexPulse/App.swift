@@ -835,9 +835,10 @@ struct WeeklyLimitView: View {
         if let weekly {
             let used = min(max(weekly.used, 0), 100)
             VStack(alignment: alignTrailing ? .trailing : .leading, spacing: 2) {
-                HStack(spacing: 5) {
+                HStack(alignment: .bottom, spacing: 5) {
                     Text(languageSettings.language.weeklyLimit)
                         .dockPanelTextShadow()
+                        .font(.headline)
                         .fontWeight(.semibold)
                     Spacer(minLength: 2)
                     Text(languageSettings.language.usedPercent(Int(used.rounded())))
@@ -876,6 +877,7 @@ struct WeeklyLimitView: View {
             VStack(alignment: alignTrailing ? .trailing : .leading, spacing: 2) {
                 Text(languageSettings.language.weeklyQuota)
                     .dockPanelTextShadow()
+                    .font(.headline)
                     .fontWeight(.semibold)
                 Text(languageSettings.language.noData)
                     .dockPanelTextShadow()
