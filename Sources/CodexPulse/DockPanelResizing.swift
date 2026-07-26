@@ -222,6 +222,8 @@ final class DockPanelPresentationState {
     var usageSide: PanelSide = .left
     var taskSide: PanelSide = .right
     var taskActivityTextAlignment: TaskActivityTextAlignment = .auto
+    var usageAppearance: PanelSemanticAppearance = .dark
+    var taskAppearance: PanelSemanticAppearance = .dark
 }
 
 enum DockPanelResizeAnchor {
@@ -725,6 +727,11 @@ final class DockPanelResizeController {
         self.metrics = metrics
         guard let visibleHandle else { return }
         updateOverlays(visibleHandle)
+    }
+
+    func setAppearance(_ appearance: NSAppearance?, for identity: DockPanelIdentity) {
+        interactionPanels[identity]?.appearance = appearance
+        interactionViews[identity]?.needsDisplay = true
     }
 
     private func makeInteractionView(for identity: DockPanelIdentity) -> DockPanelInteractionView {
@@ -1403,6 +1410,7 @@ private final class DockPanelLanguagePickerView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let languages = AppLanguage.allCases
         guard let selectedIndex = languages.firstIndex(of: language) else { return }
+        let semanticAppearance = PanelSemanticAppearance(appKitAppearance: effectiveAppearance)
         for offset in -1...1 {
             let index = (selectedIndex + offset + languages.count) % languages.count
             let row = DockPanelLanguagePickerGeometry.rowFrame(offset: offset, in: bounds)
@@ -1410,14 +1418,14 @@ private final class DockPanelLanguagePickerView: NSView {
             paragraph.alignment = .center
             paragraph.lineBreakMode = .byTruncatingTail
             let shadow = NSShadow()
-            shadow.shadowColor = NSColor.black.withAlphaComponent(0.62)
+            shadow.shadowColor = semanticAppearance.shadowColor.withAlphaComponent(0.62)
             shadow.shadowBlurRadius = 0.45
             shadow.shadowOffset = .zero
             (languages[index].displayName as NSString).draw(
                 in: row,
                 withAttributes: [
                     .font: NSFont.systemFont(ofSize: offset == 0 ? 10 : 8, weight: offset == 0 ? .semibold : .regular),
-                    .foregroundColor: NSColor.white.withAlphaComponent(offset == 0 ? 1 : 0.46),
+                    .foregroundColor: semanticAppearance.foregroundColor.withAlphaComponent(offset == 0 ? 1 : 0.46),
                     .paragraphStyle: paragraph,
                     .shadow: shadow,
                 ]

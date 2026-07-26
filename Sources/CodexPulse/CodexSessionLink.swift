@@ -19,13 +19,17 @@ enum CodexThreadLink {
 @MainActor
 final class CodexSessionLinkController {
     private var panels: [String: NSPanel] = [:]
-    private var appearance: NSAppearance?
+    private var semanticAppearance: PanelSemanticAppearance = .dark
 
-    func setAppearance(_ appearance: NSAppearance?) {
-        self.appearance = appearance
+    func setAppearance(_ semanticAppearance: PanelSemanticAppearance) {
+        self.semanticAppearance = semanticAppearance
+        let appearance = NSAppearance(
+            named: semanticAppearance == .dark ? .darkAqua : .aqua
+        )
         for panel in panels.values {
             panel.appearance = appearance
-            panel.contentView?.needsDisplay = true
+            (panel.contentView as? CodexSessionLinkView)?.setAppearance(semanticAppearance)
+            panel.displayIfNeeded()
         }
     }
 
@@ -81,9 +85,12 @@ final class CodexSessionLinkController {
             threadID: threadID,
             title: title,
             language: language,
-            textAlignment: textAlignment
+            textAlignment: textAlignment,
+            semanticAppearance: semanticAppearance
         )
-        panel.appearance = appearance
+        panel.appearance = NSAppearance(
+            named: semanticAppearance == .dark ? .darkAqua : .aqua
+        )
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
@@ -97,22 +104,29 @@ final class CodexSessionLinkController {
     }
 }
 
-private final class CodexSessionLinkView: NSView {
+final class CodexSessionLinkView: NSView {
     private let threadID: String
     private var title: String
     private var language: AppLanguage
     private var textAlignment: TaskActivityTextAlignment
+    private var semanticAppearance: PanelSemanticAppearance
+
+    var renderedForegroundColor: NSColor {
+        semanticAppearance.foregroundColor
+    }
 
     init(
         threadID: String,
         title: String,
         language: AppLanguage,
-        textAlignment: TaskActivityTextAlignment
+        textAlignment: TaskActivityTextAlignment,
+        semanticAppearance: PanelSemanticAppearance
     ) {
         self.threadID = threadID
         self.title = title
         self.language = language
         self.textAlignment = textAlignment
+        self.semanticAppearance = semanticAppearance
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.link)
@@ -141,19 +155,25 @@ private final class CodexSessionLinkView: NSView {
         needsDisplay = true
     }
 
+    func setAppearance(_ semanticAppearance: PanelSemanticAppearance) {
+        guard self.semanticAppearance != semanticAppearance else { return }
+        self.semanticAppearance = semanticAppearance
+        needsDisplay = true
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         paragraph.alignment = textAlignment == .left ? .left : .right
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.62)
+        shadow.shadowColor = semanticAppearance.shadowColor.withAlphaComponent(0.62)
         shadow.shadowBlurRadius = 0.45
         shadow.shadowOffset = .zero
         (title as NSString).draw(
             in: bounds.insetBy(dx: 0, dy: 1),
             withAttributes: [
                 .font: NSFont.systemFont(ofSize: 8, weight: .semibold),
-                .foregroundColor: NSColor.white,
+                .foregroundColor: renderedForegroundColor,
                 .paragraphStyle: paragraph,
                 .shadow: shadow,
             ]

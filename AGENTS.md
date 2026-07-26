@@ -23,7 +23,7 @@ Run the full test suite after changing panel text rendering, wallpaper sampling 
 ## Source map
 
 - `Sources/CodexPulse/App.swift`: app lifecycle, shared model, Dock panel placement, and SwiftUI views.
-- `Sources/CodexPulse/CodexSessionLink.swift`: clickable Codex session-title windows and their matching white-text shadow rendering.
+- `Sources/CodexPulse/CodexSessionLink.swift`: clickable Codex session-title windows and their matching adaptive-foreground shadow rendering.
 - `Sources/CodexPulse/DockPanelResizing.swift`: panel arrangement and persistence, placement geometry, window levels, pointer dwell, resizing, and interaction controls.
 - `Sources/CodexPulse/RefreshActivityGate.swift`: composable refresh suspension for inactive sessions and sleeping displays.
 - `Sources/CodexPulse/UsageScanner.swift`: local Claude Code, Codex, and OpenCode usage scanning.
@@ -31,7 +31,8 @@ Run the full test suite after changing panel text rendering, wallpaper sampling 
 - `Sources/CodexPulse/TaskExecutionLayout.swift`: shared task grouping, visible-row selection, and dynamic panel-height planning.
 - `Sources/CodexPulse/Models.swift`: usage, rate-window, daily-usage, task, snapshot, and pricing models.
 - `Sources/CodexPulse/LaunchAtLoginManager.swift`: login startup eligibility and `SMAppService` registration for release app bundles.
-- `Sources/CodexPulse/WallpaperAppearance.swift`: wallpaper geometry, luminance sampling, semantic appearance selection, refresh tracking, and decoded-image caching.
+- `Sources/CodexPulse/WallpaperAppearance.swift`: wallpaper geometry, candidate sampling, Store directory monitoring, semantic appearance selection, refresh tracking, and decoded-asset caching.
+- `Sources/CodexPulse/WallpaperSourceResolver.swift`: typed local wallpaper-source resolution from Store selections, including solid, file-backed, video, Aerial, supported dynamic, and unavailable sources.
 - `Tests/CodexPulseTests/DockPanelWidthGeometryTests.swift`: panel arrangement, placement, overlay geometry, dwell timing, and window-level regression tests.
 - `Tests/CodexPulseTests/LaunchAtLoginManagerTests.swift`: launch-at-login eligibility regression tests.
 - `Tests/CodexPulseTests/ParserTests.swift`: parser and behavior regression tests.
@@ -56,8 +57,9 @@ Run the full test suite after changing panel text rendering, wallpaper sampling 
 - Keep the app as an accessory app with borderless, nonactivating, click-through panels unless the product behavior is intentionally changed.
 - Panel placement must continue to support bottom, left, and right Dock positions and multiple Spaces.
 - Keep content, session-link, and interaction windows below normal application windows. Session-link hit targets must remain above content panels, and interaction controls must remain above both.
-- Keep panel text, including the AppKit session-link overlays, uniformly white with a single subtle black shadow. Preserve SwiftUI primary/secondary brightness hierarchy through the local dark semantic environment. Do not reintroduce appearance-dependent black text, white outlines, or multi-copy text rendering unless a future product requirement explicitly changes the contrast treatment.
-- Keep wallpaper appearance sampling file-based and read-only. Do not replace it with screen capture or introduce Screen Recording permission. Preserve separate per-panel sampling, desktop scaling/clipping/fill-color semantics, AppKit-to-image coordinate orientation, luminance hysteresis, and system-appearance fallback.
+- Keep panel text, including the AppKit session-link overlays and language picker, adaptive between black and white using the sampled wallpaper contrast, with one subtle opposite-color shadow. Preserve the SwiftUI primary/secondary brightness hierarchy through the local semantic appearance. Do not reintroduce fixed-color text, outlines, or multi-copy text rendering unless a future product requirement explicitly changes the contrast treatment.
+- Keep wallpaper appearance sampling file-based and read-only. Do not replace it with screen capture or introduce Screen Recording permission. Preserve separate per-panel area-averaged RGB sampling, desktop scaling/clipping/fill-color semantics, transparent-pixel compositing, AppKit-to-image coordinate orientation, luminance hysteresis, and system-appearance fallback.
+- Keep wallpaper Store monitoring read-only, debounced, cancellable, and scoped to the Store directory so atomic `Index.plist` replacement is observed. Deliver file-system events on the main queue before touching the `@MainActor` monitor or panel controller. Monitoring failure must silently retain the five-second polling fallback. Resolve Store selections once into typed solid, static-image, phase-unknown candidate, or unavailable sources using public property-list APIs and local assets only. Solid selections are authoritative; only explicit Pictures/Photos/Movies selections may use the workspace URL fallback. Never substitute a stale workspace URL for known dynamic, Aerial, extension, or procedural selections, and never download assets.
 - Resample wallpaper appearance only when wallpaper identity or options, screen identity or size, or sampled panel regions change. Reuse the decoded wallpaper when only geometry or display options change; invalidate it when the wallpaper URL, modification date, or file size changes. Cancel superseded work and reject stale generations before applying appearance results.
 - When the system appearance changes, apply its semantic appearance immediately as a fallback, then invalidate and resample the wallpaper after the desktop transition settles. Space changes, session activation, and display wake should re-check state without forcing redundant decoding.
 
