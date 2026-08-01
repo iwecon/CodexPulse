@@ -304,7 +304,7 @@ import Foundation
 }
 
 @Test func abortedTaskEventIsRecognized() {
-    let aborted = #"{"timestamp":"2026-07-23T10:01:00Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"turn-1","completed_at":1784800860,"reason":"interrupted"}}"#
+    let aborted = #"{"timestamp":"2026-07-23T10:01:00Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"turn-1","started_at":1784800800,"completed_at":1784800860,"reason":"interrupted"}}"#
     let event = TaskMonitor.parseEvent(aborted[...], threadID: "thread-1", title: "构建应用")
 
     #expect(event?.id == "turn-1")
@@ -313,6 +313,62 @@ import Foundation
         return
     }
     #expect(abortedAt == Date(timeIntervalSince1970: 1_784_800_860))
+    #expect(event?.startedAt == Date(timeIntervalSince1970: 1_784_800_800))
+}
+
+@Test func userAbortedTaskIsTerminated() {
+    let start = #"{"timestamp":"2026-07-23T10:00:00Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","started_at":1784800800}}"#
+    let abort = #"{"timestamp":"2026-07-23T10:01:00Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"turn-1","started_at":1784800800,"completed_at":1784800860,"reason":"interrupted"}}"#
+    var tasks: [String: TaskExecution] = [:]
+    var pending: [String: String] = [:]
+
+    for line in [start, abort] {
+        guard let event = TaskMonitor.parseEvent(line[...], threadID: "thread-1", title: "构建应用") else {
+            Issue.record("Expected a task event")
+            return
+        }
+        TaskMonitor.apply(event, to: &tasks, pendingUserMessages: &pending)
+    }
+
+    #expect(tasks["turn-1"]?.status == .terminated)
+    #expect(tasks["turn-1"]?.completedAt == Date(timeIntervalSince1970: 1_784_800_860))
+}
+
+@Test func pausedGoalReclassifiesTheMostRecentAbortedTask() {
+    let start = #"{"timestamp":"2026-07-23T10:00:00Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","started_at":1784800800}}"#
+    let abort = #"{"timestamp":"2026-07-23T10:01:00Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"turn-1","started_at":1784800800,"completed_at":1784800860,"reason":"interrupted"}}"#
+    let pause = #"{"timestamp":"2026-07-23T10:01:00.250Z","type":"event_msg","payload":{"type":"thread_goal_updated","threadId":"thread-1","goal":{"status":"paused"}}}"#
+    var tasks: [String: TaskExecution] = [:]
+    var pending: [String: String] = [:]
+
+    for line in [start, abort, pause] {
+        guard let event = TaskMonitor.parseEvent(line[...], threadID: "thread-1", title: "构建应用") else {
+            Issue.record("Expected a task or goal event")
+            return
+        }
+        TaskMonitor.apply(event, to: &tasks, pendingUserMessages: &pending)
+    }
+
+    #expect(tasks["turn-1"]?.status == .paused)
+    #expect(tasks["turn-1"]?.completedAt == Date(timeIntervalSince1970: 1_784_800_860.25))
+}
+
+@Test func pausedGoalPausesTheCurrentlyRunningTask() {
+    let start = #"{"timestamp":"2026-07-23T10:00:00Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","started_at":1784800800}}"#
+    let pause = #"{"timestamp":"2026-07-23T10:01:00Z","type":"event_msg","payload":{"type":"thread_goal_updated","threadId":"thread-1","goal":{"status":"paused"}}}"#
+    var tasks: [String: TaskExecution] = [:]
+    var pending: [String: String] = [:]
+
+    for line in [start, pause] {
+        guard let event = TaskMonitor.parseEvent(line[...], threadID: "thread-1", title: "构建应用") else {
+            Issue.record("Expected a task or goal event")
+            return
+        }
+        TaskMonitor.apply(event, to: &tasks, pendingUserMessages: &pending)
+    }
+
+    #expect(tasks["turn-1"]?.status == .paused)
+    #expect(tasks["turn-1"]?.completedAt == Date(timeIntervalSince1970: 1_784_800_860))
 }
 
 @Test func userMessageAndProjectMetadataAreParsed() {
@@ -457,6 +513,42 @@ import Foundation
     #expect(limits[10_080]?.used == 14)
     #expect(limits[10_080]?.observedAt == newerDate)
     #expect(limits[10_080]?.resetsAt == Date(timeIntervalSince1970: 1_785_258_729))
+}
+
+@Test func codexRateLimitsIgnoreNamedModelQuotaAndAcceptLegacyShape() {
+    let valid: [String: Any] = [
+        "limit_id": "codex",
+        "primary": ["used_percent": 5, "window_minutes": 10_080, "resets_at": 1_786_169_220]
+    ]
+    let compacted: [String: Any] = [
+        "limit_id": "codex_bengalfox",
+        "limit_name": "GPT-5.3-Codex-Spark",
+        "primary": ["used_percent": 0, "window_minutes": 10_080, "resets_at": 1_786_804_800]
+    ]
+    let validDate = Date(timeIntervalSince1970: 1_785_600_000)
+    let compactedDate = Date(timeIntervalSince1970: 1_786_100_000)
+
+    for observations in [[(valid, validDate), (compacted, compactedDate)],
+                         [(compacted, compactedDate), (valid, validDate)]] {
+        var limits: [Int: RateWindow] = [:]
+        for (rates, observedAt) in observations {
+            UsageScanner.mergeRateLimits(rates, observedAt: observedAt, into: &limits)
+        }
+
+        #expect(limits[10_080]?.used == 5)
+        #expect(limits[10_080]?.observedAt == validDate)
+        #expect(limits[10_080]?.resetsAt == Date(timeIntervalSince1970: 1_786_169_220))
+    }
+
+    let legacy: [String: Any] = [
+        "primary": ["used_percent": 7, "window_minutes": 300, "resets_at": 1_786_200_000],
+        "secondary": ["used_percent": 42, "window_minutes": 10_080, "resets_at": 1_786_700_000],
+    ]
+    var legacyLimits: [Int: RateWindow] = [:]
+    UsageScanner.mergeRateLimits(legacy, observedAt: validDate, into: &legacyLimits)
+
+    #expect(legacyLimits[300]?.used == 7)
+    #expect(legacyLimits[10_080]?.used == 42)
 }
 
 @Test func JSONLineReaderStreamsAcrossSmallChunksAndSkipsOversizedLines() throws {

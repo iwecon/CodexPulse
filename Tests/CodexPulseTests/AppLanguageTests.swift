@@ -37,6 +37,8 @@ import Testing
         #expect(!language.languagePickerLabel.isEmpty)
         #expect(!language.runningTask.isEmpty)
         #expect(!language.completedTask.isEmpty)
+        #expect(!language.pausedTask.isEmpty)
+        #expect(!language.terminatedTask.isEmpty)
         #expect(language.usedPercent(42).contains("42%"))
         #expect(language.remainingPercent(58).contains("58%"))
         #expect(language.tokenCount(123).contains("123"))

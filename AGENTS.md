@@ -61,6 +61,7 @@ Run the full test suite after changing panel text rendering, wallpaper sampling 
 - Avoid publishing equivalent snapshots or task arrays to the observable UI model. Time-based updates must stay in the smallest leaf view that needs them; do not wrap an entire panel in a high-frequency `TimelineView`.
 - Treat polling and animation rates as a performance budget. The task activity indicator should not exceed 12 FPS and idle pointer polling should not exceed 4 Hz without new profiling evidence and a documented reason.
 - Codex rate limits must be selected by the event observation timestamp, not filesystem enumeration order. Older session files must never overwrite a newer `rate_limits` snapshot.
+- Only the account-level Codex quota belongs in the weekly-limit section. Accept legacy `rate_limits` records without `limit_id` and current records whose `limit_id` is `codex`; ignore named/model-specific limits even when they reuse the same window duration.
 - Treat `used_percent` as consumed quota. The UI derives remaining quota as `100 - used_percent`.
 - Preserve per-session cumulative-token delta handling when changing Codex token parsing.
 - Keep the app as an accessory app with borderless, nonactivating, click-through panels unless the product behavior is intentionally changed.

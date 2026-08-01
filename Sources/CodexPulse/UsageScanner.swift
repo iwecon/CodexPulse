@@ -337,6 +337,13 @@ actor UsageScanner {
     nonisolated static func mergeRateLimits(
         _ rates: [String: Any], observedAt: Date?, into limits: inout [Int: RateWindow]
     ) {
+        // Current Codex builds can switch to a named, model-specific quota
+        // during context compaction. It may use the same window duration as
+        // the account quota, so merging only by minutes would replace the
+        // Codex weekly limit with (for example) a Spark model limit. Older
+        // rollouts have no limit_id; continue accepting that legacy shape.
+        if let limitID = rates["limit_id"] as? String, limitID != "codex" { return }
+
         for key in ["primary", "secondary", "individual_limit"] {
             guard let window = rates[key] as? [String: Any],
                   let minutes = (window["window_minutes"] as? NSNumber)?.intValue,

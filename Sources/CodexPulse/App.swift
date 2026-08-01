@@ -1348,7 +1348,7 @@ struct TaskExecutionView: View {
     let barColorSettings: ToolBarColorSettings
 
     private struct TaskStatusIndicator: View {
-        let isCompleted: Bool
+        let status: TaskExecutionStatus
         let isAnimationPaused: Bool
         /// The session's tool usage-bar color, including any user override.
         let sessionColor: Color
@@ -1357,16 +1357,34 @@ struct TaskExecutionView: View {
 
         var body: some View {
             Group {
-                if isCompleted {
+                switch status {
+                case .completed:
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(sessionColor)
-                } else {
+                case .paused:
+                    Image(systemName: "pause.circle.fill")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(sessionColor)
+                case .terminated:
+                    Image(systemName: "stop.circle.fill")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(sessionColor)
+                case .running:
                     loadingRing
                 }
             }
             .frame(width: 9, height: 9)
-            .accessibilityLabel(isCompleted ? language.completedTask : language.runningTask)
+            .accessibilityLabel(accessibilityLabel)
+        }
+
+        private var accessibilityLabel: String {
+            switch status {
+            case .running: language.runningTask
+            case .completed: language.completedTask
+            case .paused: language.pausedTask
+            case .terminated: language.terminatedTask
+            }
         }
 
         private var loadingRing: some View {
@@ -1513,14 +1531,14 @@ struct TaskExecutionView: View {
                                         Spacer(minLength: 2)
                                         TaskMessageText(task: task, textAlignment: .trailing)
                                         TaskStatusIndicator(
-                                            isCompleted: task.isCompleted,
+                                            status: task.status,
                                             isAnimationPaused: model.isTaskStatusAnimationPaused,
                                             sessionColor: sessionColor,
                                             language: languageSettings.language
                                         )
                                     } else {
                                         TaskStatusIndicator(
-                                            isCompleted: task.isCompleted,
+                                            status: task.status,
                                             isAnimationPaused: model.isTaskStatusAnimationPaused,
                                             sessionColor: sessionColor,
                                             language: languageSettings.language

@@ -165,6 +165,18 @@ actor TaskMonitor {
     }
 
     private func apply(_ event: TaskExecutionEvent) {
+        Self.apply(
+            event,
+            to: &executions,
+            pendingUserMessages: &pendingUserMessages
+        )
+    }
+
+    nonisolated static func apply(
+        _ event: TaskExecutionEvent,
+        to executions: inout [String: TaskExecution],
+        pendingUserMessages: inout [String: String]
+    ) {
         switch event.kind {
         case .started:
             if let current = executions[event.id], current.completedAt != nil { return }
@@ -175,7 +187,8 @@ actor TaskMonitor {
                 projectName: event.projectName,
                 latestUserMessage: pendingUserMessages.removeValue(forKey: event.threadID) ?? "",
                 startedAt: event.startedAt,
-                completedAt: nil
+                completedAt: nil,
+                terminalStatus: nil
             )
         case .completed(let completedAt):
             let current = executions[event.id]
@@ -186,13 +199,30 @@ actor TaskMonitor {
                 projectName: current?.projectName ?? event.projectName,
                 latestUserMessage: current?.latestUserMessage ?? "",
                 startedAt: event.startedAt,
-                completedAt: completedAt
+                completedAt: completedAt,
+                terminalStatus: nil
             )
-        case .aborted:
-            executions.removeValue(forKey: event.id)
+        case .aborted(let abortedAt):
+            let current = executions[event.id]
+            executions[event.id] = TaskExecution(
+                id: event.id,
+                threadID: event.threadID,
+                title: event.title,
+                projectName: current?.projectName ?? event.projectName,
+                latestUserMessage: current?.latestUserMessage ?? "",
+                startedAt: event.startedAt,
+                completedAt: abortedAt,
+                terminalStatus: .terminated
+            )
+        case .goalPaused(let pausedAt):
+            guard let taskID = executions.values
+                .filter({ $0.threadID == event.threadID && ($0.status == .terminated || $0.status == .running) })
+                .max(by: { $0.startedAt < $1.startedAt })?.id else { return }
+            executions[taskID]?.completedAt = pausedAt
+            executions[taskID]?.terminalStatus = .paused
         case .userMessage(let message, _):
             if let id = executions.values
-                .filter({ $0.threadID == event.threadID && $0.completedAt == nil })
+                .filter({ $0.threadID == event.threadID && $0.status == .running })
                 .max(by: { $0.startedAt < $1.startedAt })?.id {
                 executions[id]?.latestUserMessage = message
             } else {
@@ -226,6 +256,20 @@ actor TaskMonitor {
             )
         }
 
+        if type == "thread_goal_updated" {
+            guard let goal = payload["goal"] as? [String: Any],
+                  goal["status"] as? String == "paused",
+                  let pausedAt = UsageScanner.date(root["timestamp"]) else { return nil }
+            return TaskExecutionEvent(
+                id: threadID,
+                threadID: threadID,
+                title: title,
+                projectName: projectName,
+                startedAt: pausedAt,
+                kind: .goalPaused(pausedAt)
+            )
+        }
+
         guard let turnID = payload["turn_id"] as? String else { return nil }
 
         switch type {
@@ -237,8 +281,10 @@ actor TaskMonitor {
                   let completedAt = UsageScanner.date(payload["completed_at"] ?? root["timestamp"]) else { return nil }
             return TaskExecutionEvent(id: turnID, threadID: threadID, title: title, projectName: projectName, startedAt: startedAt, kind: .completed(completedAt))
         case "turn_aborted":
-            guard let abortedAt = UsageScanner.date(payload["completed_at"] ?? root["timestamp"]) else { return nil }
-            return TaskExecutionEvent(id: turnID, threadID: threadID, title: title, projectName: projectName, startedAt: abortedAt, kind: .aborted(abortedAt))
+            guard payload["reason"] as? String == "interrupted",
+                  let abortedAt = UsageScanner.date(payload["completed_at"] ?? root["timestamp"]),
+                  let startedAt = UsageScanner.date(payload["started_at"] ?? root["timestamp"]) else { return nil }
+            return TaskExecutionEvent(id: turnID, threadID: threadID, title: title, projectName: projectName, startedAt: startedAt, kind: .aborted(abortedAt))
         default:
             return nil
         }
@@ -269,8 +315,8 @@ actor TaskMonitor {
     /// per-tool scans produce one stable list.
     nonisolated static func sortedForDisplay(_ tasks: [TaskExecution]) -> [TaskExecution] {
         tasks.sorted {
-            if $0.isCompleted != $1.isCompleted {
-                return $0.isCompleted
+            if $0.isTerminal != $1.isTerminal {
+                return $0.isTerminal
             }
             let left = $0.completedAt ?? $0.startedAt
             let right = $1.completedAt ?? $1.startedAt

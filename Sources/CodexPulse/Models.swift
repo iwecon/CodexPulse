@@ -78,14 +78,29 @@ struct TaskExecution: Identifiable, Sendable, Equatable {
     var latestUserMessage = ""
     let startedAt: Date
     var completedAt: Date?
+    /// Explicit non-success terminal state. A nil value preserves the
+    /// existing completed-at representation for ordinary completions.
+    var terminalStatus: TaskExecutionStatus? = nil
 
-    var isCompleted: Bool { completedAt != nil }
+    var status: TaskExecutionStatus {
+        terminalStatus ?? (completedAt == nil ? .running : .completed)
+    }
+    var isCompleted: Bool { status == .completed }
+    var isTerminal: Bool { completedAt != nil }
+}
+
+enum TaskExecutionStatus: Sendable, Equatable {
+    case running
+    case completed
+    case paused
+    case terminated
 }
 
 enum TaskEventKind: Sendable {
     case started
     case completed(Date)
     case aborted(Date)
+    case goalPaused(Date)
     case userMessage(String, Date)
 }
 
@@ -102,6 +117,7 @@ struct TaskExecutionEvent: Sendable {
         case .started: startedAt
         case .completed(let date): date
         case .aborted(let date): date
+        case .goalPaused(let date): date
         case .userMessage(_, let date): date
         }
     }

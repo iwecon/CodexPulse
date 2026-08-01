@@ -315,6 +315,26 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    var pausedTask: String {
+        switch self {
+        case .simplifiedChineseMainland: "任务已暂停"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "任務已暫停"
+        case .japanese: "タスク一時停止"
+        case .korean: "작업 일시 정지됨"
+        case .english: "Task paused"
+        }
+    }
+
+    var terminatedTask: String {
+        switch self {
+        case .simplifiedChineseMainland: "任务已终止"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "任務已終止"
+        case .japanese: "タスク終了"
+        case .korean: "작업 종료됨"
+        case .english: "Task terminated"
+        }
+    }
+
     func usedPercent(_ value: Int) -> String {
         switch self {
         case .simplifiedChineseMainland: "已用 \(value)%"
