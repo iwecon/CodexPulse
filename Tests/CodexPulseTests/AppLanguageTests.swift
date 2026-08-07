@@ -31,6 +31,7 @@ import Testing
 @Test func everyLanguageProvidesLocalizedPanelAndControlCopy() {
     for language in AppLanguage.allCases {
         #expect(!language.recentFourteenDays.isEmpty)
+        #expect(!language.tomorrow.isEmpty)
         #expect(!language.weeklyLimit.isEmpty)
         #expect(!language.noRecentTasks.isEmpty)
         #expect(!language.changeLanguage.isEmpty)
@@ -41,6 +42,7 @@ import Testing
         #expect(!language.terminatedTask.isEmpty)
         #expect(language.usedPercent(42).contains("42%"))
         #expect(language.remainingPercent(58).contains("58%"))
+        #expect(language.remainingAvailable(58).contains("58"))
         #expect(language.tokenCount(123).contains("123"))
         #expect(!language.movePanel(.usageOverview, to: .right).isEmpty)
         #expect(!language.swapPanelOrder(.taskActivity).isEmpty)
@@ -56,6 +58,7 @@ import Testing
     #expect(AppLanguage.japanese.noData == "データなし")
     #expect(AppLanguage.korean.noData == "데이터 없음")
     #expect(AppLanguage.english.noData == "No data")
+    #expect(AppLanguage.simplifiedChineseMainland.remainingAvailable(58) == "剩余可用 58.0%")
 }
 
 @Test func countdownAndDatesUseTheSelectedLanguage() {
@@ -80,12 +83,33 @@ import Testing
     #expect(WeeklyLimitCountdown.format(reset: underMinute, now: now, compact: true) == "<1分钟")
 }
 
-@Test func shortResetTextOmitsTheTimeOfDay() {
-    let date = Date(timeIntervalSince1970: 1_800_000_000)
+@Test func resetTextUsesRelativeDaysAndKeepsTimeOnlyAtRegularWidth() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+    let now = try #require(calendar.date(from: DateComponents(
+        year: 2026, month: 8, day: 8, hour: 10
+    )))
+    let today = try #require(calendar.date(from: DateComponents(
+        year: 2026, month: 8, day: 8, hour: 18, minute: 5
+    )))
+    let tomorrow = try #require(calendar.date(from: DateComponents(
+        year: 2026, month: 8, day: 9, hour: 7, minute: 9
+    )))
+    let later = try #require(calendar.date(from: DateComponents(
+        year: 2026, month: 8, day: 12, hour: 9, minute: 7
+    )))
+    let language = AppLanguage.simplifiedChineseMainland
 
-    let full = AppLanguage.simplifiedChineseMainland.resetText(date)
-    let short = AppLanguage.simplifiedChineseMainland.resetShortText(date)
-    #expect(short.hasPrefix("重置 "))
-    #expect(short.count < full.count)
-    #expect(!short.contains(":"))
+    #expect(language.resetText(today, relativeTo: now, calendar: calendar) == "重置 今日 18:05")
+    #expect(language.resetText(tomorrow, relativeTo: now, calendar: calendar) == "重置 明日 07:09")
+    #expect(language.resetText(later, relativeTo: now, calendar: calendar) == "重置 8月12日 09:07")
+    #expect(language.resetText(
+        today, relativeTo: now, calendar: calendar, includesTime: false
+    ) == "重置 今日")
+    #expect(language.resetText(
+        tomorrow, relativeTo: now, calendar: calendar, includesTime: false
+    ) == "重置 明日")
+    #expect(language.resetText(
+        later, relativeTo: now, calendar: calendar, includesTime: false
+    ) == "重置 8月12日")
 }

@@ -14,34 +14,39 @@ import Foundation
     #expect(UsageModel.compact(3_500_000_000_000) == "3.5T")
 }
 
-@Test func weeklyLimitPacingUsesExactRemainingTime() {
+@Test func weeklyLimitPacingSwitchesToRemainingAvailabilityWithinOneDay() {
     let now = Date(timeIntervalSince1970: 1_780_000_000)
 
-    #expect(WeeklyLimitPacing.averageDailyAvailablePercent(
+    #expect(WeeklyLimitPacing.availability(
         usedPercent: 25,
         resetsAt: now.addingTimeInterval(3 * 86_400),
         now: now
-    ) == 25)
-    #expect(WeeklyLimitPacing.averageDailyAvailablePercent(
-        usedPercent: 50,
+    ) == .averageDaily(25))
+    #expect(WeeklyLimitPacing.availability(
+        usedPercent: 25,
+        resetsAt: now.addingTimeInterval(86_400),
+        now: now
+    ) == .averageDaily(75))
+    #expect(WeeklyLimitPacing.availability(
+        usedPercent: 25,
         resetsAt: now.addingTimeInterval(12 * 3_600),
         now: now
-    ) == 100)
+    ) == .remaining(75))
 }
 
 @Test func weeklyLimitPacingClampsQuotaAndExpiredWindows() {
     let now = Date(timeIntervalSince1970: 1_780_000_000)
 
-    #expect(WeeklyLimitPacing.averageDailyAvailablePercent(
+    #expect(WeeklyLimitPacing.availability(
         usedPercent: 120,
         resetsAt: now.addingTimeInterval(86_400),
         now: now
-    ) == 0)
-    #expect(WeeklyLimitPacing.averageDailyAvailablePercent(
+    ) == .averageDaily(0))
+    #expect(WeeklyLimitPacing.availability(
         usedPercent: -20,
         resetsAt: now,
         now: now
-    ) == 0)
+    ) == .remaining(0))
 }
 
 @Test func weeklyLimitCountdownUsesLargestRelevantUnits() {
@@ -154,15 +159,19 @@ import Foundation
     defer { try? FileManager.default.removeItem(at: home) }
 
     let event = #""payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":50,"output_tokens":30},"last_token_usage":{"input_tokens":200,"cached_input_tokens":50,"output_tokens":30}}}"#
+    let originalEventDate = Date.now.addingTimeInterval(-2 * 86_400)
+    let parentMetaTimestamp = originalEventDate.addingTimeInterval(-1).formatted(.iso8601)
+    let originalTimestamp = originalEventDate.formatted(.iso8601)
+    let replayTimestamp = originalEventDate.addingTimeInterval(86_400).formatted(.iso8601)
     let parent = [
-        #"{"timestamp":"2026-07-20T09:00:00Z","type":"session_meta","payload":{"session_id":"thread-1","id":"thread-1"}}"#,
-        #"{"timestamp":"2026-07-20T09:00:01Z","type":"event_msg",\#(event)}"#,
+        #"{"timestamp":"\#(parentMetaTimestamp)","type":"session_meta","payload":{"session_id":"thread-1","id":"thread-1"}}"#,
+        #"{"timestamp":"\#(originalTimestamp)","type":"event_msg",\#(event)}"#,
     ]
     // An archived subagent rollout replays the same event under a fresh
     // timestamp on a later day.
     let child = [
-        #"{"timestamp":"2026-07-21T08:00:00Z","type":"session_meta","payload":{"session_id":"thread-1","id":"thread-2"}}"#,
-        #"{"timestamp":"2026-07-21T08:00:00Z","type":"event_msg",\#(event)}"#,
+        #"{"timestamp":"\#(replayTimestamp)","type":"session_meta","payload":{"session_id":"thread-1","id":"thread-2"}}"#,
+        #"{"timestamp":"\#(replayTimestamp)","type":"event_msg",\#(event)}"#,
     ]
     try (parent.joined(separator: "\n") + "\n").data(using: .utf8)!
         .write(to: sessions.appending(path: "parent.jsonl"))
@@ -173,7 +182,7 @@ import Foundation
 
     #expect(snapshot.usage[.codex]?.total == 230)
     #expect(snapshot.usage[.codex]?.requests == 1)
-    let original = Calendar.current.startOfDay(for: try Date("2026-07-20T09:00:01Z", strategy: .iso8601))
+    let original = Calendar.current.startOfDay(for: originalEventDate)
     #expect(snapshot.dailyUsage.reduce(0) { $0 + $1.total } == 230)
     #expect(snapshot.dailyUsage.first(where: { $0.date == original })?.total == 230)
 }
@@ -611,9 +620,10 @@ import Foundation
     try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: home) }
 
-    let claude = #"{"type":"assistant","timestamp":"2026-07-23T10:00:00Z","message":{"id":"message-1","model":"claude-sonnet","usage":{"input_tokens":10,"output_tokens":2}}}"#
+    let recentTimestamp = Date.now.addingTimeInterval(-60).formatted(.iso8601)
+    let claude = #"{"type":"assistant","timestamp":"\#(recentTimestamp)","message":{"id":"message-1","model":"claude-sonnet","usage":{"input_tokens":10,"output_tokens":2}}}"#
     try (claude + "\n").data(using: .utf8)!.write(to: projects.appending(path: "session.jsonl"))
-    let codex = #"{"timestamp":"2026-07-23T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":20,"cached_input_tokens":5,"output_tokens":3}}}}"#
+    let codex = #"{"timestamp":"\#(recentTimestamp)","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":20,"cached_input_tokens":5,"output_tokens":3}}}}"#
     try (codex + "\n").data(using: .utf8)!.write(to: sessions.appending(path: "session.jsonl"))
 
     let scanner = UsageScanner(home: home)

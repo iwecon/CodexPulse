@@ -43,6 +43,16 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    var tomorrow: String {
+        switch self {
+        case .simplifiedChineseMainland: "明日"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "明日"
+        case .japanese: "明日"
+        case .korean: "내일"
+        case .english: "Tomorrow"
+        }
+    }
+
     var weeklyLimit: String {
         switch self {
         case .simplifiedChineseMainland: "周限额"
@@ -355,8 +365,31 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    func resetText(_ date: Date) -> String {
-        let value = date.formatted(Date.FormatStyle.dateTime.locale(locale).month().day().hour().minute())
+    func resetText(
+        _ date: Date,
+        relativeTo now: Date = .now,
+        calendar: Calendar = .autoupdatingCurrent,
+        includesTime: Bool = true
+    ) -> String {
+        let style = Date.FormatStyle(
+            locale: locale,
+            calendar: calendar,
+            timeZone: calendar.timeZone
+        )
+        let day: String
+        if calendar.isDate(date, inSameDayAs: now) {
+            day = today
+        } else if let tomorrowDate = calendar.date(byAdding: .day, value: 1, to: now),
+                  calendar.isDate(date, inSameDayAs: tomorrowDate) {
+            day = tomorrow
+        } else {
+            day = date.formatted(style.month().day())
+        }
+        let value = if includesTime {
+            "\(day) \(date.formatted(style.hour().minute()))"
+        } else {
+            day
+        }
         return switch self {
         case .simplifiedChineseMainland: "重置 \(value)"
         case .traditionalChineseHongKong, .traditionalChineseTaiwan: "重設 \(value)"
@@ -366,15 +399,14 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Narrow-panel variant of `resetText`: date only, no time of day.
-    func resetShortText(_ date: Date) -> String {
-        let value = date.formatted(Date.FormatStyle.dateTime.locale(locale).month().day())
-        return switch self {
-        case .simplifiedChineseMainland: "重置 \(value)"
-        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "重設 \(value)"
-        case .japanese: "リセット \(value)"
-        case .korean: "재설정 \(value)"
-        case .english: "Resets \(value)"
+    func remainingAvailable(_ value: Double) -> String {
+        switch self {
+        case .simplifiedChineseMainland: String(format: "剩余可用 %.1f%%", locale: locale, value)
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan:
+            String(format: "剩餘可用 %.1f%%", locale: locale, value)
+        case .japanese: String(format: "利用可能残量 %.1f%%", locale: locale, value)
+        case .korean: String(format: "남은 사용 가능량 %.1f%%", locale: locale, value)
+        case .english: String(format: "Remaining available %.1f%%", locale: locale, value)
         }
     }
 

@@ -1171,23 +1171,45 @@ struct RecentUsageView: View {
 }
 
 struct WeeklyLimitView: View {
-    private struct AverageDailyAvailableText: View {
+    private struct AvailablePercentText: View {
         let used: Double
         let resetsAt: Date
         let language: AppLanguage
 
         var body: some View {
             TimelineView(.periodic(from: .now, by: 60)) { context in
-                let value = WeeklyLimitPacing.averageDailyAvailablePercent(
+                let availability = WeeklyLimitPacing.availability(
                     usedPercent: used,
                     resetsAt: resetsAt,
                     now: context.date
                 )
-                Text(language.averageDailyAvailable(value))
+                let text = switch availability {
+                case let .averageDaily(value): language.averageDailyAvailable(value)
+                case let .remaining(value): language.remainingAvailable(value)
+                }
+                Text(text)
                     .dockPanelTextShadow()
                     .monospacedDigit()
                     .lineLimit(1)
                     .layoutPriority(1)
+            }
+        }
+    }
+
+    private struct ResetText: View {
+        let reset: Date
+        let language: AppLanguage
+        let compact: Bool
+
+        var body: some View {
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                Text(language.resetText(
+                    reset,
+                    relativeTo: context.date,
+                    includesTime: !compact
+                ))
+                    .dockPanelTextShadow()
+                    .lineLimit(1)
             }
         }
     }
@@ -1219,8 +1241,8 @@ struct WeeklyLimitView: View {
     private var weekly: RateWindow? { model.snapshot.weeklyLimitWindow }
 
     /// Below this measured width the quota texts switch to their compact
-    /// forms: percent without labels, date without time, countdown without
-    /// its leading label, and the consumed tokens as a bare figure.
+    /// forms: percent without labels, reset date without time, countdown
+    /// without its leading label, and the consumed tokens as a bare figure.
     private static let compactWidthThreshold: CGFloat = 150
     @State private var sectionWidth: CGFloat = .infinity
     private var isCompact: Bool { sectionWidth < Self.compactWidthThreshold }
@@ -1260,15 +1282,15 @@ struct WeeklyLimitView: View {
                 }
                 .frame(height: 4)
                 HStack(spacing: 4) {
-                    Text(isCompact
-                        ? languageSettings.language.resetShortText(weekly.resetsAt)
-                        : languageSettings.language.resetText(weekly.resetsAt))
-                        .dockPanelTextShadow()
-                        .lineLimit(1)
-                        .foregroundStyle(.secondary)
+                    ResetText(
+                        reset: weekly.resetsAt,
+                        language: languageSettings.language,
+                        compact: isCompact
+                    )
+                    .foregroundStyle(.secondary)
                     if !isCompact {
                         Spacer(minLength: 2)
-                        AverageDailyAvailableText(
+                        AvailablePercentText(
                             used: used,
                             resetsAt: weekly.resetsAt,
                             language: languageSettings.language
@@ -1326,17 +1348,25 @@ enum WeeklyLimitCountdown {
 }
 
 enum WeeklyLimitPacing {
+    enum Availability: Equatable {
+        case averageDaily(Double)
+        case remaining(Double)
+    }
+
     private static let secondsPerDay: TimeInterval = 86_400
 
-    static func averageDailyAvailablePercent(
+    static func availability(
         usedPercent: Double,
         resetsAt: Date,
         now: Date
-    ) -> Double {
+    ) -> Availability {
         let remainingPercent = 100 - min(max(usedPercent, 0), 100)
-        let remainingDays = resetsAt.timeIntervalSince(now) / secondsPerDay
-        guard remainingDays > 0 else { return 0 }
-        return remainingPercent / remainingDays
+        let remainingSeconds = resetsAt.timeIntervalSince(now)
+        guard remainingSeconds > 0 else { return .remaining(0) }
+        guard remainingSeconds >= secondsPerDay else {
+            return .remaining(remainingPercent)
+        }
+        return .averageDaily(remainingPercent / (remainingSeconds / secondsPerDay))
     }
 }
 
