@@ -200,12 +200,16 @@ actor TaskMonitor {
         switch event.kind {
         case .started:
             if let current = executions[event.id], current.completedAt != nil { return }
+            let inheritedMessage = executions.values
+                .filter { $0.threadID == event.threadID && !$0.latestUserMessage.isEmpty }
+                .max(by: { $0.startedAt < $1.startedAt })?.latestUserMessage ?? ""
             executions[event.id] = TaskExecution(
                 id: event.id,
                 threadID: event.threadID,
                 title: event.title,
                 projectName: event.projectName,
-                latestUserMessage: pendingUserMessages.removeValue(forKey: event.threadID) ?? "",
+                latestUserMessage: pendingUserMessages.removeValue(forKey: event.threadID)
+                    ?? inheritedMessage,
                 startedAt: event.startedAt,
                 completedAt: nil,
                 terminalStatus: nil

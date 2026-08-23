@@ -10,10 +10,11 @@ actor UsageScanner {
         var parsedOpenCodeRows = 0
         var activeJSONFiles = 0
         var retainedUsageRecords = 0
+        var retainedCodexFileReferences = 0
         var acceleratedCodexFiles = 0
     }
 
-    private struct FileVersion: Equatable {
+    private struct FileVersion: Sendable, Equatable {
         let size: UInt64
         let modificationDate: Date
     }
@@ -30,22 +31,61 @@ actor UsageScanner {
         var messages: [RecordFingerprint: ClaudeRecord]
     }
 
-    private struct CodexRecord {
+    private struct CodexRecord: Sendable, Equatable {
         let usage: Usage
         let date: Date
     }
 
-    private struct CodexParserState {
+    /// Cold scans use contiguous compact candidates only until aggregation.
+    /// Codex records never use cache-write tokens and every token event is one
+    /// request, so those constants are omitted before the temporary candidates
+    /// are discarded in favor of the summary, fingerprints, and cursors.
+    private struct CompactCodexRecord: Sendable {
+        let key: RecordFingerprint
+        let timestamp: TimeInterval
+        let input: UInt32
+        let output: UInt32
+        let cacheRead: UInt32
+        let costUSD: Float
+
+        init(key: RecordFingerprint, record: CodexRecord) {
+            self.key = key
+            timestamp = record.date.timeIntervalSince1970
+            // One token event is bounded by a model context window and is
+            // therefore far below UInt32.max. Clamp corrupted source values
+            // rather than widening every retained record to three machine
+            // words.
+            input = UInt32(clamping: max(0, record.usage.input))
+            output = UInt32(clamping: max(0, record.usage.output))
+            cacheRead = UInt32(clamping: max(0, record.usage.cacheRead))
+            costUSD = Float(record.usage.costUSD)
+        }
+
+        var record: CodexRecord {
+            CodexRecord(
+                usage: Usage(
+                    input: Int(input),
+                    output: Int(output),
+                    cacheRead: Int(cacheRead),
+                    costUSD: Double(costUSD),
+                    requests: 1
+                ),
+                date: Date(timeIntervalSince1970: timestamp)
+            )
+        }
+    }
+
+    private struct CodexParserState: Sendable {
         var pricing = Pricing.forModel("gpt-5")
         var previous: Usage?
         var sessionID: String?
     }
 
-    private struct CodexFileCache {
+    private struct CodexFileCache: Sendable {
         var version: FileVersion
         var offset: UInt64
         var continuity: Data
-        var records: [RecordFingerprint: CodexRecord]
+        var records: [CompactCodexRecord]
         var limits: [Int: RateWindow]
         var parser: CodexParserState
     }
@@ -56,10 +96,20 @@ actor UsageScanner {
         var records: [RecordFingerprint: CodexRecord] = [:]
     }
 
-    private struct ColdCodexState {
-        var records: [RecordFingerprint: CodexRecord] = [:]
+    /// A cold-filter batch mutates one file state once per token event. Keep
+    /// that state reference-owned and append directly to its final compact
+    /// storage so cold workers never build a transient per-file hash table.
+    private final class ColdCodexState {
+        var records: [CompactCodexRecord] = []
         var limits: [Int: RateWindow] = [:]
         var parser = CodexParserState()
+    }
+
+    private struct ColdCodexBatchResult: Sendable {
+        var caches: [String: CodexFileCache] = [:]
+        var parsedBytes: UInt64 = 0
+        var inputFileCount = 0
+        var succeeded = false
     }
 
     private struct OpenCodeRecord {
@@ -120,6 +170,7 @@ actor UsageScanner {
     private static let sessionMetaMarker = Data(#""type":"session_meta""#.utf8)
     private static let turnContextMarker = Data(#""type":"turn_context""#.utf8)
     private static let tokenCountMarker = Data(#""type":"token_count""#.utf8)
+    private static let coldCodexWorkerLimit = 8
     private static let codexColdFilterAWK = #"""
         {
             separator = index($0, ":{")
@@ -144,6 +195,7 @@ actor UsageScanner {
     private var claudeCache: [String: ClaudeFileCache] = [:]
     private var codexCache: [String: CodexFileCache] = [:]
     private var mergedCodexRecords: [RecordFingerprint: CodexRecord] = [:]
+    private var codexSeenRecords: Set<RecordFingerprint> = []
     private var openCodeCache: OpenCodeCache?
     private var claudeAggregateCache: (cutoff: Date, total: Usage, daily: [Date: Usage])?
     private var codexAggregateCache: (
@@ -151,7 +203,8 @@ actor UsageScanner {
         total: Usage,
         daily: [Date: Usage],
         limits: [RateWindow],
-        windowTokens: Int?
+        windowTokens: Int?,
+        windowStart: Date?
     )?
     private var statistics = ScanStatistics()
     private var jsonBytesSincePressureRelief: UInt64 = 0
@@ -172,7 +225,7 @@ actor UsageScanner {
         let bytesBeforeScan = statistics.parsedJSONBytes
         let cutoff = Self.cutoff(now: now, calendar: calendar)
         let c = enabledTools.contains(.claude) ? scanClaude(cutoff: cutoff) : (.zero, [:], nil)
-        let x = enabledTools.contains(.codex) ? scanCodex(cutoff: cutoff) : (.zero, [:], [], nil, nil)
+        let x = enabledTools.contains(.codex) ? await scanCodex(cutoff: cutoff) : (.zero, [:], [], nil, nil)
         let o = enabledTools.contains(.opencode) ? scanOpenCode(cutoff: cutoff) : (.zero, [:], nil)
         var result = Snapshot()
         if enabledTools.contains(.claude) {
@@ -200,8 +253,11 @@ actor UsageScanner {
         result.updatedAt = now
         statistics.activeJSONFiles = claudeCache.count + codexCache.count
         statistics.retainedUsageRecords = claudeCache.values.reduce(0) { $0 + $1.messages.count }
-            + codexCache.values.reduce(0) { $0 + $1.records.count }
+            + codexSeenRecords.count
             + (openCodeCache?.records.count ?? 0)
+        statistics.retainedCodexFileReferences = codexCache.values.reduce(0) {
+            $0 + $1.records.count
+        }
         if statistics.parsedJSONBytes > bytesBeforeScan {
             // Foundation JSON parsing creates many short-lived malloc blocks.
             // Return their now-empty pages after a large cold/rebuild scan so
@@ -331,7 +387,7 @@ actor UsageScanner {
 
     // MARK: - Codex
 
-    private func scanCodex(cutoff: Date) -> (Usage, [Date: Usage], [RateWindow], Int?, String?) {
+    private func scanCodex(cutoff: Date) async -> (Usage, [Date: Usage], [RateWindow], Int?, String?) {
         let roots = [
             home.appending(path: ".codex/sessions"),
             home.appending(path: ".codex/archived_sessions"),
@@ -339,73 +395,53 @@ actor UsageScanner {
         guard !roots.isEmpty else {
             codexCache.removeAll(keepingCapacity: false)
             mergedCodexRecords.removeAll(keepingCapacity: false)
+            codexSeenRecords.removeAll(keepingCapacity: false)
             codexAggregateCache = nil
             return (.zero, [:], [], nil, "未找到 ~/.codex/sessions")
         }
-        let files = roots.flatMap { recentJSONFiles(in: $0, cutoff: cutoff) }
+        var files = roots.flatMap { recentJSONFiles(in: $0, cutoff: cutoff) }
         let livePaths = Set(files.map(\.0.path))
+        let cachedPaths = Set(codexCache.keys)
+        let removedFile = !cachedPaths.isSubset(of: livePaths)
+        let crossedDayBoundary = codexAggregateCache?.cutoff != cutoff
+        if removedFile || crossedDayBoundary {
+            codexCache.removeAll(keepingCapacity: false)
+            mergedCodexRecords.removeAll(keepingCapacity: false)
+            codexSeenRecords.removeAll(keepingCapacity: false)
+            codexAggregateCache = nil
+        }
         var changed = livePaths != Set(codexCache.keys)
-        var requiresMergedRebuild = changed
-        codexCache = codexCache.filter { livePaths.contains($0.key) }
         if codexCache.isEmpty, !files.isEmpty {
-            accelerateColdCodexFiles(files, cutoff: cutoff)
+            await accelerateColdCodexFiles(files, cutoff: cutoff)
+            // Cold filtering can overlap an append to the currently active
+            // rollout. Use fresh versions below so a successful retry becomes
+            // an ordinary suffix update instead of a false replacement.
+            files = roots.flatMap { recentJSONFiles(in: $0, cutoff: cutoff) }
         }
         var incrementalRecords: [RecordFingerprint: CodexRecord] = [:]
+        var requiresFullRebuild = false
         for (file, version) in files {
-            let update = updateCodexFile(
-                file,
-                version: version,
-                cutoff: cutoff,
-                collectChangedRecords: !requiresMergedRebuild
-            )
+            let update = updateCodexFile(file, version: version, cutoff: cutoff)
             changed = update.changed || changed
             if update.changed && !update.canMergeIncrementally {
-                requiresMergedRebuild = true
-                incrementalRecords.removeAll(keepingCapacity: false)
+                requiresFullRebuild = true
             }
-            if !requiresMergedRebuild {
-                for (key, record) in update.records {
-                    if record.date < (incrementalRecords[key]?.date ?? .distantFuture) {
-                        incrementalRecords[key] = record
-                    }
+            for (key, record) in update.records {
+                if record.date < (incrementalRecords[key]?.date ?? .distantFuture) {
+                    incrementalRecords[key] = record
                 }
             }
         }
-        let cutoffChanged = codexAggregateCache?.cutoff != cutoff
-        changed = changed || cutoffChanged
-        requiresMergedRebuild = requiresMergedRebuild || cutoffChanged
-        if cutoffChanged {
-            for path in Array(codexCache.keys) {
-                guard var cached = codexCache.removeValue(forKey: path) else { continue }
-                let oldRecordCount = cached.records.count
-                let oldLimitCount = cached.limits.count
-                cached.records = cached.records.filter { $0.value.date >= cutoff }
-                cached.limits = cached.limits.filter { $0.value.observedAt >= cutoff }
-                let pruned = cached.records.count != oldRecordCount || cached.limits.count != oldLimitCount
-                changed = changed || pruned
-                requiresMergedRebuild = requiresMergedRebuild || pruned
-                codexCache[path] = cached
-            }
+        if requiresFullRebuild {
+            codexCache.removeAll(keepingCapacity: false)
+            mergedCodexRecords.removeAll(keepingCapacity: false)
+            codexSeenRecords.removeAll(keepingCapacity: false)
+            codexAggregateCache = nil
+            return await scanCodex(cutoff: cutoff)
         }
 
         if !changed, let aggregate = codexAggregateCache {
             return (aggregate.total, aggregate.daily, aggregate.limits, aggregate.windowTokens, nil)
-        }
-
-        if requiresMergedRebuild || mergedCodexRecords.isEmpty {
-            var rebuilt: [RecordFingerprint: CodexRecord] = [:]
-            for cached in codexCache.values {
-                for (key, record) in cached.records {
-                    if record.date < (rebuilt[key]?.date ?? .distantFuture) { rebuilt[key] = record }
-                }
-            }
-            mergedCodexRecords = rebuilt
-        } else {
-            for (key, record) in incrementalRecords {
-                if record.date < (mergedCodexRecords[key]?.date ?? .distantFuture) {
-                    mergedCodexRecords[key] = record
-                }
-            }
         }
 
         var limits: [Int: RateWindow] = [:]
@@ -415,54 +451,135 @@ actor UsageScanner {
                 limits[minutes] = window
             }
         }
-        var total = Usage.zero
-        var daily: [Date: Usage] = [:]
-        for record in mergedCodexRecords.values {
-            total.add(record.usage)
-            daily[calendar.startOfDay(for: record.date), default: .zero].add(record.usage)
-        }
         let sortedLimits = limits.values.sorted { $0.minutes < $1.minutes }
-        var windowTokens: Int?
-        if let weekly = Snapshot.weeklyLimitWindow(in: sortedLimits) {
-            let windowStart = weekly.resetsAt.addingTimeInterval(-Double(weekly.minutes) * 60)
-            windowTokens = mergedCodexRecords.values.reduce(0) { sum, record in
-                record.date >= windowStart ? sum + record.usage.total : sum
+        let weeklyWindowStart = Snapshot.weeklyLimitWindow(in: sortedLimits).map {
+            $0.resetsAt.addingTimeInterval(-Double($0.minutes) * 60)
+        }
+        if let aggregate = codexAggregateCache,
+           aggregate.windowStart != weeklyWindowStart {
+            codexCache.removeAll(keepingCapacity: false)
+            mergedCodexRecords.removeAll(keepingCapacity: false)
+            codexSeenRecords.removeAll(keepingCapacity: false)
+            codexAggregateCache = nil
+            return await scanCodex(cutoff: cutoff)
+        }
+
+        if let aggregate = codexAggregateCache {
+            var total = aggregate.total
+            var daily = aggregate.daily
+            var windowTokens = aggregate.windowTokens
+            for (key, record) in incrementalRecords
+            where codexSeenRecords.insert(key).inserted {
+                total.add(record.usage)
+                daily[calendar.startOfDay(for: record.date), default: .zero].add(record.usage)
+                if let weeklyWindowStart, record.date >= weeklyWindowStart {
+                    windowTokens = (windowTokens ?? 0) + record.usage.total
+                }
+            }
+            discardCodexRecordDetails()
+            codexAggregateCache = (
+                cutoff,
+                total,
+                daily,
+                sortedLimits,
+                weeklyWindowStart == nil ? nil : windowTokens ?? 0,
+                weeklyWindowStart
+            )
+            return (total, daily, sortedLimits, codexAggregateCache?.windowTokens, nil)
+        }
+
+        var rebuilt: [RecordFingerprint: CodexRecord] = [:]
+        for cached in codexCache.values {
+            for compact in cached.records {
+                let record = compact.record
+                if record.date < (rebuilt[compact.key]?.date ?? .distantFuture) {
+                    rebuilt[compact.key] = record
+                }
             }
         }
-        codexAggregateCache = (cutoff, total, daily, sortedLimits, windowTokens)
+        mergedCodexRecords = rebuilt
+        var dayStarts: [Date] = []
+        dayStarts.reserveCapacity(15)
+        for offset in 0...14 {
+            guard let start = calendar.date(byAdding: .day, value: offset, to: cutoff) else { break }
+            dayStarts.append(start)
+        }
+        let dayTimestamps = dayStarts.map(\.timeIntervalSince1970)
+        var total = Usage.zero
+        var daily: [Date: Usage] = [:]
+        var windowTokens: Int?
+        var weeklyTokens = 0
+        for record in mergedCodexRecords.values {
+            total.add(record.usage)
+            let timestamp = record.date.timeIntervalSince1970
+            var low = 0
+            var high = dayTimestamps.count
+            while low < high {
+                let midpoint = low + (high - low) / 2
+                if dayTimestamps[midpoint] <= timestamp {
+                    low = midpoint + 1
+                } else {
+                    high = midpoint
+                }
+            }
+            let dayIndex = low - 1
+            if dayIndex >= 0, dayIndex < min(14, dayStarts.count) {
+                daily[dayStarts[dayIndex], default: .zero].add(record.usage)
+            }
+            if let weeklyWindowStart, record.date >= weeklyWindowStart {
+                weeklyTokens += record.usage.total
+            }
+        }
+        if weeklyWindowStart != nil { windowTokens = weeklyTokens }
+        codexSeenRecords = Set(mergedCodexRecords.keys)
+        mergedCodexRecords.removeAll(keepingCapacity: false)
+        discardCodexRecordDetails()
+        codexAggregateCache = (
+            cutoff,
+            total,
+            daily,
+            sortedLimits,
+            windowTokens,
+            weeklyWindowStart
+        )
         return (total, daily, sortedLimits, windowTokens, nil)
+    }
+
+    private func discardCodexRecordDetails() {
+        for path in Array(codexCache.keys) {
+            guard var cached = codexCache.removeValue(forKey: path) else { continue }
+            cached.records.removeAll(keepingCapacity: false)
+            codexCache[path] = cached
+        }
     }
 
     private func updateCodexFile(
         _ file: URL,
         version: FileVersion,
-        cutoff: Date,
-        collectChangedRecords: Bool
+        cutoff: Date
     ) -> CodexFileUpdate {
         let path = file.path
         if codexCache[path]?.version == version { return CodexFileUpdate() }
         let hadCache = codexCache[path] != nil
-        var cached = codexCache.removeValue(forKey: path)
+        let cached = codexCache.removeValue(forKey: path)
         let canContinue = cached.map {
             version.size > $0.version.size && version.size >= $0.offset
                 && Self.continuity(in: file, at: $0.offset) == $0.continuity
         } ?? false
-        if !canContinue { cached = nil }
-        var records = cached?.records ?? [:]
-        var limits = cached?.limits ?? [:]
-        var parser = cached?.parser ?? CodexParserState()
-        let start = cached?.offset ?? Self.initialScanOffset(
+        var limits = canContinue ? cached?.limits ?? [:] : [:]
+        var parser = canContinue ? cached?.parser ?? CodexParserState() : CodexParserState()
+        let start = canContinue ? cached?.offset ?? 0 : Self.initialScanOffset(
             in: file,
             size: version.size,
             cutoff: cutoff
         )
-        if cached == nil, start > 0,
+        if !canContinue, start > 0,
            let firstLine = Self.locatedLine(in: file, atOrAfter: 0, size: version.size),
            Self.contains(firstLine.data[...], marker: Self.sessionMetaMarker) {
             parser.sessionID = Self.jsonString("session_id", in: firstLine.data[...])
                 ?? Self.jsonString("id", in: firstLine.data[...])
         }
-        var changedRecords: [RecordFingerprint: CodexRecord] = [:]
+        var parsedRecords: [RecordFingerprint: CodexRecord] = [:]
         do {
             let progress = try Self.forEachCompleteJSONLine(in: file, startingAt: start) { line in
                 if Self.contains(line, marker: Self.sessionMetaMarker) {
@@ -496,10 +613,9 @@ actor UsageScanner {
                             session: parser.sessionID ?? path,
                             cumulative: current
                         )
-                        if observedAt < (records[key]?.date ?? .distantFuture) {
+                        if observedAt < (parsedRecords[key]?.date ?? .distantFuture) {
                             let record = CodexRecord(usage: delta, date: observedAt)
-                            records[key] = record
-                            if collectChangedRecords { changedRecords[key] = record }
+                            parsedRecords[key] = record
                         }
                     }
                     parser.previous = current
@@ -512,11 +628,30 @@ actor UsageScanner {
             statistics.parsedJSONFiles += 1
             statistics.parsedJSONBytes += progress.bytesRead
             relieveJSONParsingPressure(afterReading: progress.bytesRead)
+            var records: [CompactCodexRecord]
+            if canContinue, let existing = cached {
+                records = existing.records
+                var indexByKey: [RecordFingerprint: Int] = [:]
+                indexByKey.reserveCapacity(records.count)
+                for (index, record) in records.enumerated() { indexByKey[record.key] = index }
+                for (key, record) in parsedRecords {
+                    if let index = indexByKey[key] {
+                        if record.date < records[index].record.date {
+                            records[index] = CompactCodexRecord(key: key, record: record)
+                        }
+                    } else {
+                        indexByKey[key] = records.count
+                        records.append(CompactCodexRecord(key: key, record: record))
+                    }
+                }
+            } else {
+                records = parsedRecords.map { CompactCodexRecord(key: $0.key, record: $0.value) }
+            }
             codexCache[path] = CodexFileCache(
                 version: version,
                 offset: progress.offset,
                 continuity: Self.continuity(in: file, at: progress.offset),
-                records: records.filter { $0.value.date >= cutoff },
+                records: records,
                 limits: limits.filter { $0.value.observedAt >= cutoff },
                 parser: parser
             )
@@ -527,7 +662,7 @@ actor UsageScanner {
         return CodexFileUpdate(
             changed: true,
             canMergeIncrementally: canContinue || !hadCache,
-            records: changedRecords
+            records: parsedRecords
         )
     }
 
@@ -539,33 +674,93 @@ actor UsageScanner {
     private func accelerateColdCodexFiles(
         _ files: [(URL, FileVersion)],
         cutoff: Date
-    ) {
+    ) async {
         let eligible = files.filter { file, version in
             Self.initialScanOffset(in: file, size: version.size, cutoff: cutoff) == 0
                 && Self.endsInNewline(file, size: version.size)
         }
         guard !eligible.isEmpty else { return }
 
+        var batches: [[(URL, FileVersion)]] = []
         var batch: [(URL, FileVersion)] = []
         var argumentBytes = 0
+        var sourceBytes: UInt64 = 0
+        let totalSourceBytes = eligible.reduce(UInt64(0)) { partial, item in
+            partial &+ item.1.size
+        }
+        let targetSourceBytes = max(
+            totalSourceBytes / UInt64(Self.coldCodexWorkerLimit),
+            1
+        )
         for item in eligible {
             let bytes = item.0.path.utf8.count + 1
-            if !batch.isEmpty, argumentBytes + bytes > 96 * 1024 {
-                _ = runColdCodexFilter(batch, cutoff: cutoff)
+            if !batch.isEmpty,
+               argumentBytes + bytes > 96 * 1024 || sourceBytes >= targetSourceBytes {
+                batches.append(batch)
                 batch.removeAll(keepingCapacity: true)
                 argumentBytes = 0
+                sourceBytes = 0
             }
             batch.append(item)
             argumentBytes += bytes
+            sourceBytes &+= item.1.size
         }
-        if !batch.isEmpty { _ = runColdCodexFilter(batch, cutoff: cutoff) }
+        if !batch.isEmpty { batches.append(batch) }
+
+        await withTaskGroup(of: ColdCodexBatchResult.self) { group in
+            var nextBatch = 0
+            let workerCount = min(Self.coldCodexWorkerLimit, batches.count)
+            for _ in 0..<workerCount {
+                let pending = batches[nextBatch]
+                nextBatch += 1
+                group.addTask {
+                    Self.runColdCodexFilter(pending, cutoff: cutoff)
+                }
+            }
+
+            while let result = await group.next() {
+                if result.succeeded {
+                    for (path, cache) in result.caches { codexCache[path] = cache }
+                    statistics.parsedJSONFiles += result.inputFileCount
+                    statistics.parsedJSONBytes += result.parsedBytes
+                    statistics.acceleratedCodexFiles += result.inputFileCount
+                    relieveJSONParsingPressure(afterReading: result.parsedBytes)
+                }
+                if nextBatch < batches.count {
+                    let pending = batches[nextBatch]
+                    nextBatch += 1
+                    group.addTask {
+                        Self.runColdCodexFilter(pending, cutoff: cutoff)
+                    }
+                }
+            }
+        }
+
+        let unresolved = eligible.compactMap { file, version -> (URL, FileVersion)? in
+            guard codexCache[file.path]?.version != version,
+                  let current = Self.fileVersion(at: file),
+                  current != version,
+                  Self.endsInNewline(file, size: current.size) else { return nil }
+            return (file, current)
+        }
+        if !unresolved.isEmpty {
+            let retry = await Task.detached {
+                Self.runColdCodexFilter(unresolved, cutoff: cutoff)
+            }.value
+            if retry.succeeded {
+                for (path, cache) in retry.caches { codexCache[path] = cache }
+                statistics.parsedJSONFiles += retry.inputFileCount
+                statistics.parsedJSONBytes += retry.parsedBytes
+                statistics.acceleratedCodexFiles += retry.inputFileCount
+                relieveJSONParsingPressure(afterReading: retry.parsedBytes)
+            }
+        }
     }
 
-    @discardableResult
-    private func runColdCodexFilter(
+    private nonisolated static func runColdCodexFilter(
         _ files: [(URL, FileVersion)],
         cutoff: Date
-    ) -> Bool {
+    ) -> ColdCodexBatchResult {
         let grep = Process()
         grep.executableURL = URL(fileURLWithPath: "/usr/bin/grep")
         grep.arguments = [
@@ -592,19 +787,20 @@ actor UsageScanner {
         } catch {
             if grep.isRunning { grep.terminate() }
             if awk.isRunning { awk.terminate() }
-            return false
+            return ColdCodexBatchResult(inputFileCount: files.count)
         }
         grepOutput.fileHandleForReading.closeFile()
         grepOutput.fileHandleForWriting.closeFile()
         filteredOutput.fileHandleForWriting.closeFile()
 
         let versions = Dictionary(uniqueKeysWithValues: files.map { ($0.0.path, $0.1) })
+        var result = ColdCodexBatchResult(inputFileCount: files.count)
         var completedPaths: Set<String> = []
         var currentPath: String?
         var currentState: ColdCodexState?
 
         func makeState(for path: String) -> ColdCodexState {
-            var state = ColdCodexState()
+            let state = ColdCodexState()
             guard let version = versions[path],
                   let line = Self.locatedLine(
                     in: URL(fileURLWithPath: path),
@@ -619,11 +815,14 @@ actor UsageScanner {
         func finishCurrent() {
             guard let path = currentPath, let state = currentState,
                   let version = versions[path],
-                  fileVersion(at: URL(fileURLWithPath: path)) == version else { return }
-            codexCache[path] = CodexFileCache(
+                  Self.fileVersion(at: URL(fileURLWithPath: path)) == version else { return }
+            result.caches[path] = CodexFileCache(
                 version: version,
                 offset: version.size,
-                continuity: Self.continuity(in: URL(fileURLWithPath: path), at: version.size),
+                continuity: Self.continuity(
+                    in: URL(fileURLWithPath: path),
+                    at: version.size
+                ),
                 records: state.records,
                 limits: state.limits,
                 parser: state.parser
@@ -631,7 +830,6 @@ actor UsageScanner {
             completedPaths.insert(path)
         }
 
-        var bytesRead: UInt64 = 0
         var outputBuffer = Data()
         outputBuffer.reserveCapacity(512 * 1024)
         var discardingOversizedLine = false
@@ -647,7 +845,7 @@ actor UsageScanner {
                 let count = Darwin.read(handle.fileDescriptor, readBuffer, readCapacity)
                 if count == 0 { break }
                 guard count > 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
-                bytesRead += UInt64(count)
+                result.parsedBytes += UInt64(count)
                 let chunk = UnsafeBufferPointer(
                     start: readBuffer.assumingMemoryBound(to: UInt8.self),
                     count: count
@@ -670,7 +868,7 @@ actor UsageScanner {
                             let path = String(decoding: line.dropFirst(2), as: UTF8.self)
                             currentPath = versions[path] == nil ? nil : path
                             currentState = currentPath.map(makeState)
-                        } else if var state = currentState {
+                        } else if let state = currentState {
                             if line.starts(with: [0x4D, 0x09]) {
                                 state.parser.pricing = Pricing.forModel(
                                     String(decoding: line.dropFirst(2), as: UTF8.self)
@@ -681,10 +879,9 @@ actor UsageScanner {
                                     event,
                                     path: path,
                                     cutoff: cutoff,
-                                    state: &state
+                                    state: state
                                 )
                             }
-                            currentState = state
                         }
                     }
                     lineStart = outputBuffer.index(after: newline)
@@ -708,33 +905,30 @@ actor UsageScanner {
         let succeeded = (grep.terminationStatus == 0 || grep.terminationStatus == 1)
             && awk.terminationStatus == 0
         guard succeeded else {
-            for (file, _) in files { codexCache.removeValue(forKey: file.path) }
-            return false
+            result.caches.removeAll(keepingCapacity: false)
+            return result
         }
 
         for (file, version) in files where !completedPaths.contains(file.path) {
-            guard fileVersion(at: file) == version else { continue }
-            codexCache[file.path] = CodexFileCache(
+            guard Self.fileVersion(at: file) == version else { continue }
+            result.caches[file.path] = CodexFileCache(
                 version: version,
                 offset: version.size,
                 continuity: Self.continuity(in: file, at: version.size),
-                records: [:],
+                records: [],
                 limits: [:],
                 parser: makeState(for: file.path).parser
             )
         }
-        statistics.parsedJSONFiles += files.count
-        statistics.parsedJSONBytes += bytesRead
-        statistics.acceleratedCodexFiles += files.count
-        relieveJSONParsingPressure(afterReading: bytesRead)
-        return true
+        result.succeeded = true
+        return result
     }
 
-    private func applyColdCodexEvent(
+    private nonisolated static func applyColdCodexEvent(
         _ event: CodexTokenCountEvent,
         path: String,
         cutoff: Date,
-        state: inout ColdCodexState
+        state: ColdCodexState
     ) {
         let observedAt = event.observedAt
         if let current = event.cumulative {
@@ -752,9 +946,12 @@ actor UsageScanner {
                     session: state.parser.sessionID ?? path,
                     cumulative: current
                 )
-                if observedAt < (state.records[key]?.date ?? .distantFuture) {
-                    state.records[key] = CodexRecord(usage: delta, date: observedAt)
-                }
+                state.records.append(
+                    CompactCodexRecord(
+                        key: key,
+                        record: CodexRecord(usage: delta, date: observedAt)
+                    )
+                )
             }
             state.parser.previous = current
         }
@@ -998,14 +1195,14 @@ actor UsageScanner {
 
     private func scanOpenCode(cutoff: Date) -> (Usage, [Date: Usage], String?) {
         let url = home.appending(path: ".local/share/opencode/opencode.db")
-        guard let databaseVersion = fileVersion(at: url) else {
+        guard let databaseVersion = Self.fileVersion(at: url) else {
             openCodeCache = nil
             return (.zero, [:], "未找到 OpenCode 数据库")
         }
         let walURL = URL(fileURLWithPath: url.path + "-wal")
         let sharedMemoryURL = URL(fileURLWithPath: url.path + "-shm")
-        let walVersion = fileVersion(at: walURL)
-        let sharedMemoryVersion = fileVersion(at: sharedMemoryURL)
+        let walVersion = Self.fileVersion(at: walURL)
+        let sharedMemoryVersion = Self.fileVersion(at: sharedMemoryURL)
         let changed = openCodeCache == nil
             || openCodeCache?.database != databaseVersion
             || openCodeCache?.wal != walVersion
@@ -1014,9 +1211,9 @@ actor UsageScanner {
             var records = openCodeCache?.records ?? [:]
             let error = updateOpenCodeDatabase(at: url.path, cutoff: cutoff, records: &records)
             openCodeCache = OpenCodeCache(
-                database: fileVersion(at: url) ?? databaseVersion,
-                wal: fileVersion(at: walURL),
-                sharedMemory: fileVersion(at: sharedMemoryURL),
+                database: Self.fileVersion(at: url) ?? databaseVersion,
+                wal: Self.fileVersion(at: walURL),
+                sharedMemory: Self.fileVersion(at: sharedMemoryURL),
                 records: records,
                 error: error
             )
@@ -1051,16 +1248,52 @@ actor UsageScanner {
         let cutoffMilliseconds = Int64(cutoff.timeIntervalSince1970 * 1_000)
         var versions: [String: Int64] = [:]
         var statement: OpaquePointer?
-        let versionSQL = "SELECT id, time_updated FROM message WHERE time_updated >= ?1"
-        guard sqlite3_prepare_v2(db, versionSQL, -1, &statement, nil) == SQLITE_OK else {
-            return "OpenCode 数据库结构不兼容"
-        }
-        sqlite3_bind_int64(statement, 1, cutoffMilliseconds)
-        while sqlite3_step(statement) == SQLITE_ROW {
-            guard let id = sqlite3_column_text(statement, 0) else { continue }
-            versions[String(cString: id)] = sqlite3_column_int64(statement, 1)
+        let candidateSQL = """
+            SELECT id FROM message INDEXED BY message_session_time_created_id_idx
+            WHERE time_created >= ?1
+            """
+        if sqlite3_prepare_v2(db, candidateSQL, -1, &statement, nil) == SQLITE_OK {
+            // A turn can straddle midnight or the rolling-window boundary.
+            // The one-day lookback stays bounded while keeping those rows as
+            // candidates; the decoded completion timestamp applies the exact
+            // cutoff below.
+            sqlite3_bind_int64(statement, 1, cutoffMilliseconds - 86_400_000)
+            var candidateIDs: [String] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let id = sqlite3_column_text(statement, 0) else { continue }
+                candidateIDs.append(String(cString: id))
+            }
+            sqlite3_finalize(statement)
+            statement = nil
+
+            let versionSQL = "SELECT time_updated FROM message WHERE id = ?1"
+            guard sqlite3_prepare_v2(db, versionSQL, -1, &statement, nil) == SQLITE_OK else {
+                return "OpenCode 数据库结构不兼容"
+            }
+            let transient = unsafeBitCast(-1 as Int, to: sqlite3_destructor_type.self)
+            for id in candidateIDs {
+                sqlite3_reset(statement)
+                sqlite3_clear_bindings(statement)
+                sqlite3_bind_text(statement, 1, id, -1, transient)
+                if sqlite3_step(statement) == SQLITE_ROW {
+                    versions[id] = sqlite3_column_int64(statement, 0)
+                }
+            }
+        } else {
+            sqlite3_finalize(statement)
+            statement = nil
+            let versionSQL = "SELECT id, time_updated FROM message WHERE time_updated >= ?1"
+            guard sqlite3_prepare_v2(db, versionSQL, -1, &statement, nil) == SQLITE_OK else {
+                return "OpenCode 数据库结构不兼容"
+            }
+            sqlite3_bind_int64(statement, 1, cutoffMilliseconds)
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let id = sqlite3_column_text(statement, 0) else { continue }
+                versions[String(cString: id)] = sqlite3_column_int64(statement, 1)
+            }
         }
         sqlite3_finalize(statement)
+        statement = nil
         records = records.filter { versions[$0.key] != nil }
 
         let changed = versions.filter { records[$0.key]?.updatedMilliseconds != $0.value }
@@ -1110,7 +1343,7 @@ actor UsageScanner {
         return OpenCodeRecord(usage: usage, date: date, updatedMilliseconds: updatedMilliseconds)
     }
 
-    private func fileVersion(at url: URL) -> FileVersion? {
+    private nonisolated static func fileVersion(at url: URL) -> FileVersion? {
         guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
               let size = values.fileSize,
               let modificationDate = values.contentModificationDate else { return nil }

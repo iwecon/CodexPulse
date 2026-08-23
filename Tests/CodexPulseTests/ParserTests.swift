@@ -1,6 +1,6 @@
-import Testing
 import CSQLite
 import Foundation
+import Testing
 @testable import CodexPulse
 
 @Test func pricingAndJSON() {
@@ -230,6 +230,89 @@ import Foundation
     let original = Calendar.current.startOfDay(for: originalEventDate)
     #expect(snapshot.dailyUsage.reduce(0) { $0 + $1.total } == 230)
     #expect(snapshot.dailyUsage.first(where: { $0.date == original })?.total == 230)
+}
+
+@Test func codexReplayOwnershipSurvivesRemovingTheOriginalFile() async throws {
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let sessions = home.appending(path: ".codex/sessions", directoryHint: .isDirectory)
+    let archived = home.appending(path: ".codex/archived_sessions", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: archived, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    let originalDate = Date.now.addingTimeInterval(-2 * 86_400)
+    let replayDate = originalDate.addingTimeInterval(86_400)
+    let event = #""payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":50,"output_tokens":30},"last_token_usage":{"input_tokens":200,"cached_input_tokens":50,"output_tokens":30}}}"#
+    let original = [
+        #"{"timestamp":"\#(originalDate.addingTimeInterval(-1).formatted(.iso8601))","type":"session_meta","payload":{"session_id":"thread-1","id":"thread-1"}}"#,
+        #"{"timestamp":"\#(originalDate.formatted(.iso8601))","type":"event_msg",\#(event)}"#,
+    ]
+    let replay = [
+        #"{"timestamp":"\#(replayDate.addingTimeInterval(-1).formatted(.iso8601))","type":"session_meta","payload":{"session_id":"thread-1","id":"thread-2"}}"#,
+        #"{"timestamp":"\#(replayDate.formatted(.iso8601))","type":"event_msg",\#(event)}"#,
+    ]
+    let originalFile = sessions.appending(path: "parent.jsonl")
+    try (original.joined(separator: "\n") + "\n").data(using: .utf8)!.write(to: originalFile)
+    try (replay.joined(separator: "\n") + "\n").data(using: .utf8)!
+        .write(to: archived.appending(path: "child.jsonl"))
+
+    let scanner = UsageScanner(home: home, enabledTools: [.codex])
+    let first = await scanner.scan()
+    let firstStatistics = await scanner.scanStatistics()
+    #expect(first.usage[.codex]?.total == 230)
+    #expect(firstStatistics.retainedUsageRecords == 1)
+    #expect(firstStatistics.retainedCodexFileReferences == 0)
+
+    try FileManager.default.removeItem(at: originalFile)
+    let afterRemoval = await scanner.scan()
+    let afterStatistics = await scanner.scanStatistics()
+    #expect(afterRemoval.usage[.codex]?.total == 230)
+    #expect(afterStatistics.retainedUsageRecords == 1)
+    #expect(afterStatistics.retainedCodexFileReferences == 0)
+    let replayDay = Calendar.current.startOfDay(for: replayDate)
+    #expect(afterRemoval.dailyUsage.first(where: { $0.date == replayDay })?.total == 230)
+}
+
+@Test func codexUsageCacheAppendsAndReplacesOnlyTheChangedFile() async throws {
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let sessions = home.appending(path: ".codex/sessions", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    let firstDate = Date.now.addingTimeInterval(-60)
+    let secondDate = Date.now
+    let metadata = #"{"timestamp":"\#(firstDate.addingTimeInterval(-1).formatted(.iso8601))","type":"session_meta","payload":{"session_id":"session-1","id":"session-1"}}"#
+    let firstEvent = #"{"timestamp":"\#(firstDate.formatted(.iso8601))","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":5},"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":5}}}}"#
+    let secondEvent = #"{"timestamp":"\#(secondDate.formatted(.iso8601))","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":30,"cached_input_tokens":0,"output_tokens":10},"last_token_usage":{"input_tokens":20,"cached_input_tokens":0,"output_tokens":5}}}}"#
+    let file = sessions.appending(path: "session.jsonl")
+    try ([metadata, firstEvent].joined(separator: "\n") + "\n").data(using: .utf8)!.write(to: file)
+
+    let scanner = UsageScanner(home: home, enabledTools: [.codex])
+    let first = await scanner.scan()
+    let firstStatistics = await scanner.scanStatistics()
+    #expect(first.usage[.codex]?.total == 15)
+
+    let handle = try FileHandle(forWritingTo: file)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: (secondEvent + "\n").data(using: .utf8)!)
+    try handle.close()
+    let appended = await scanner.scan()
+    let appendedStatistics = await scanner.scanStatistics()
+    #expect(appended.usage[.codex]?.total == 40)
+    #expect(appendedStatistics.parsedJSONBytes - firstStatistics.parsedJSONBytes == UInt64(secondEvent.utf8.count + 1))
+    #expect(appendedStatistics.retainedUsageRecords == 2)
+    #expect(appendedStatistics.retainedCodexFileReferences == 0)
+
+    let replacementMeta = metadata.replacingOccurrences(of: "session-1", with: "replacement")
+    let replacement = #"{"timestamp":"\#(secondDate.formatted(.iso8601))","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":7,"cached_input_tokens":0,"output_tokens":3},"last_token_usage":{"input_tokens":7,"cached_input_tokens":0,"output_tokens":3}}}}"#
+    try ([replacementMeta, replacement].joined(separator: "\n") + "\n").data(using: .utf8)!.write(to: file)
+    let replaced = await scanner.scan()
+    let replacedStatistics = await scanner.scanStatistics()
+    #expect(replaced.usage[.codex]?.total == 10)
+    #expect(replacedStatistics.retainedUsageRecords == 1)
+    #expect(replacedStatistics.retainedCodexFileReferences == 0)
 }
 
 @Test func codexWeeklyWindowTokensCountOnlyRecordsInsideTheResetWindow() async throws {
@@ -504,6 +587,27 @@ import Foundation
     #expect(tasks["turn-1"]?.latestUserMessage == "批准修改")
     #expect(tasks["turn-1"]?.status == .running)
     #expect(pending.isEmpty)
+}
+
+@Test func automaticGoalContinuationInheritsTheLastVisibleUserMessage() {
+    let firstStart = #"{"timestamp":"2026-08-23T10:30:00Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","started_at":"2026-08-23T10:30:00Z"}}"#
+    let firstMessage = #"{"timestamp":"2026-08-23T10:30:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"真实服务已经添加到 Connections"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}"#
+    let firstCompletion = #"{"timestamp":"2026-08-23T10:33:11.422Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1","started_at":"2026-08-23T10:30:00Z","completed_at":"2026-08-23T10:33:11.422Z"}}"#
+    let continuation = #"{"timestamp":"2026-08-23T10:33:11.441Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-2","started_at":"2026-08-23T10:33:11.441Z"}}"#
+    let goalContext = #"{"timestamp":"2026-08-23T10:33:11.472Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<codex_internal_context source=\"goal\">Continue working</codex_internal_context>"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-2"}}}"#
+    var tasks: [String: TaskExecution] = [:]
+    var pending: [String: String] = [:]
+
+    for line in [firstStart, firstMessage, firstCompletion, continuation] {
+        guard let event = TaskMonitor.parseEvent(line[...], threadID: "thread-1", title: "Session") else {
+            Issue.record("Expected a task event")
+            return
+        }
+        TaskMonitor.apply(event, to: &tasks, pendingUserMessages: &pending)
+    }
+    #expect(TaskMonitor.parseEvent(goalContext[...], threadID: "thread-1", title: "Session") == nil)
+    #expect(tasks["turn-2"]?.status == .running)
+    #expect(tasks["turn-2"]?.latestUserMessage == "真实服务已经添加到 Connections")
 }
 
 @Test func overlappingTaskThatCompletesLastRemainsVisible() {
@@ -937,7 +1041,8 @@ import Foundation
     var db: OpaquePointer?
     #expect(sqlite3_open(database.path, &db) == SQLITE_OK)
     defer { sqlite3_close(db) }
-    #expect(sqlite3_exec(db, "CREATE TABLE message (id TEXT PRIMARY KEY, time_created INTEGER, time_updated INTEGER, data TEXT)", nil, nil, nil) == SQLITE_OK)
+    #expect(sqlite3_exec(db, "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)", nil, nil, nil) == SQLITE_OK)
+    #expect(sqlite3_exec(db, "CREATE INDEX message_session_time_created_id_idx ON message (session_id, time_created, id)", nil, nil, nil) == SQLITE_OK)
 
     let now = Date.now
     let recentMS = Int64(now.timeIntervalSince1970 * 1_000)
@@ -945,7 +1050,7 @@ import Foundation
     func insert(_ id: String, milliseconds: Int64, input: Int) {
         let json = #"{"role":"assistant","time":{"completed":\#(milliseconds)},"tokens":{"input":\#(input),"output":1}}"#
         var statement: OpaquePointer?
-        sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO message VALUES (?1, ?2, ?3, ?4)", -1, &statement, nil)
+        sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO message (id, session_id, time_created, time_updated, data) VALUES (?1, 'session', ?2, ?3, ?4)", -1, &statement, nil)
         defer { sqlite3_finalize(statement) }
         let transient = unsafeBitCast(-1 as Int, to: sqlite3_destructor_type.self)
         sqlite3_bind_text(statement, 1, id, -1, transient)
