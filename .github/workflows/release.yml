@@ -191,6 +191,7 @@ jobs:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
+          release_notes_file=".github/release-notes/$RELEASE_TAG.md"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             tagged_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)"
             if [[ "$tagged_sha" != "$GITHUB_SHA" ]]; then
@@ -198,6 +199,16 @@ jobs:
               exit 1
             fi
             gh release upload "$RELEASE_TAG" dist/* --clobber
+            if [[ -f "$release_notes_file" ]]; then
+              gh release edit "$RELEASE_TAG" \
+                --title "Codex Pulse $RELEASE_VERSION" \
+                --notes-file "$release_notes_file"
+            fi
+          elif [[ -f "$release_notes_file" ]]; then
+            gh release create "$RELEASE_TAG" dist/* \
+              --target "$GITHUB_SHA" \
+              --title "Codex Pulse $RELEASE_VERSION" \
+              --notes-file "$release_notes_file"
           else
             gh release create "$RELEASE_TAG" dist/* \
               --target "$GITHUB_SHA" \

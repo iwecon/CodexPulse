@@ -142,7 +142,7 @@ Pushing a tag such as `v0.1.0` triggers `.github/workflows/release.yml`, which b
 - `Codex-Pulse-x86_64.dmg`
 - `SHA256SUMS`
 
-Each build requires the Developer ID and App Store Connect API key secrets described under [Signing](#signing). Each architecture's signed DMG is notarized, stapled, and validated before artifact upload. The workflow then creates or updates the corresponding GitHub Release. If repository variable `PUBLISH_NPM=true` and npm credential `NPM_TOKEN` are configured, the same version is also published as `@iwecon/codex-pulse`.
+Each build requires the Developer ID and App Store Connect API key secrets described under [Signing](#signing). Each architecture's signed DMG is notarized, stapled, and validated before artifact upload. The workflow then creates or updates the corresponding GitHub Release, using `.github/release-notes/vX.Y.Z.md` when that version has curated notes and falling back to generated notes otherwise. If repository variable `PUBLISH_NPM=true` and npm credential `NPM_TOKEN` are configured, the same version is also published as `@iwecon/codex-pulse`.
 
 ## Test
 
