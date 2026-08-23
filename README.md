@@ -109,13 +109,14 @@ Codex quota data is selected from the `rate_limits` snapshot with the newest eve
 
 ## Resource use
 
-- Initial launch reads existing history. JSONL files are parsed line by line in fixed-size chunks and are never expanded into whole-file `Data` and `String` values at once.
-- Codex and Claude Code parsing results are cached per file, and OpenCode results per database/WAL/SHM version, so later refreshes parse only new or changed data.
+- Initial launch reads only source files and OpenCode rows that can contain activity inside the visible 14-day window. For Codex files that begin inside the window and have a complete tail, the scanner uses the built-in macOS `/usr/bin/grep` and `/usr/bin/awk` as a read-only streaming prefilter: ordinary session content never enters the app process, large turn contexts become compact model markers, and only `token_count` rows reach the narrow byte parser. An older JSONL file that is still being appended is line-aligned by timestamp and resumes at the first record inside the window instead of scanning its expired prefix; incomplete tails and changed files fall back to the regular fixed-size chunk reader. JSONL files are never expanded into whole-file `Data` and `String` values at once, and transient allocator pages are reclaimed in bounded batches during large cold scans.
+- Usage scanning creates no derived on-disk cache and never imports session content. While the app is running, it keeps only recent usage records, per-file byte cursors and minimal Codex cumulative-token state in memory; records and inactive cursors leave memory as they roll past day 14.
+- Unchanged Codex and Claude Code files are not reopened. Continuously appended files resume after the last complete JSONL line; truncation or replacement rebuilds only that file. Codex fully decodes only in-window `token_count` records; its one-time session identity and model fields are extracted directly without deserializing large metadata/context records. OpenCode watches the database plus WAL/SHM companions, lists only recent row versions, and decodes JSON only for new or updated rows.
 - Codex and Claude Code task logs are read incrementally from byte cursors. Codex task-index and OpenCode task queries are briefly cached to avoid querying SQLite on every poll.
 - Usage and task refreshes pause while the user session is locked or the display sleeps, and active-task animations freeze for the full interval. They resume immediately after unlock and wake.
 - Equivalent data does not republish SwiftUI state. Countdown, duration, and activity updates are isolated to their smallest leaf views rather than redrawing a whole panel at high frequency.
 
-Cold launch can still produce a brief memory peak with a large local history, but memory should return to steady state after the first scan. Periodic refreshes should not rescan all historical files.
+Cold-launch work and steady-state memory are bounded by the most recent 14 days of activity rather than lifetime history. Periodic refreshes read only newly appended JSONL bytes and new or updated recent OpenCode rows.
 
 ## Requirements
 

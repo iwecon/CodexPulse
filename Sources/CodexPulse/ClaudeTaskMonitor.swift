@@ -173,16 +173,15 @@ actor ClaudeTaskMonitor {
         do {
             try handle.seek(toOffset: cursor.offset)
             var lines: [ParsedLine] = []
-            while let data = try handle.read(upToCount: 64 * 1024), !data.isEmpty {
+            while try autoreleasepool(invoking: { () throws -> Bool in
+                guard let data = try handle.read(upToCount: 64 * 1024), !data.isEmpty else { return false }
                 cursor.offset += UInt64(data.count)
                 cursor.remainder.append(data)
                 var lineStart = cursor.remainder.startIndex
                 while let newline = cursor.remainder[lineStart...].firstIndex(of: 0x0A) {
-                    autoreleasepool {
-                        let line = String(decoding: cursor.remainder[lineStart..<newline], as: UTF8.self)
-                        if let parsed = Self.parseLine(line[...]) {
-                            lines.append(parsed)
-                        }
+                    let line = String(decoding: cursor.remainder[lineStart..<newline], as: UTF8.self)
+                    if let parsed = Self.parseLine(line[...]) {
+                        lines.append(parsed)
                     }
                     lineStart = cursor.remainder.index(after: newline)
                 }
@@ -192,7 +191,8 @@ actor ClaudeTaskMonitor {
                 if cursor.remainder.count > 8 * 1024 * 1024 {
                     cursor.remainder.removeAll(keepingCapacity: false)
                 }
-            }
+                return true
+            }) {}
             cursors[source.path] = cursor
             return ReadResult(
                 lines: lines,

@@ -1,7 +1,15 @@
 import CSQLite
+import Darwin
 import Foundation
 
 actor TaskMonitor {
+    private static let eventMessageMarker = Data(#""type":"event_msg""#.utf8)
+    private static let responseItemMarker = Data(#""type":"response_item""#.utf8)
+    private static let responseUserRoleMarker = Data(#""role":"user""#.utf8)
+    private static let responseInputTextMarker = Data(#""type":"input_text""#.utf8)
+    private static let relevantEventMarkers = [
+        "user_message", "thread_goal_updated", "task_started", "task_complete", "turn_aborted",
+    ].map { Data("\"type\":\"\($0)\"".utf8) }
     private struct ThreadSource {
         let id: String
         let title: String
@@ -131,14 +139,22 @@ actor TaskMonitor {
 
         do {
             try handle.seek(toOffset: cursor.offset)
+            let startingOffset = cursor.offset
             var events: [TaskExecutionEvent] = []
-            while let data = try handle.read(upToCount: 64 * 1024), !data.isEmpty {
+            while try autoreleasepool(invoking: { () throws -> Bool in
+                guard let data = try handle.read(upToCount: 64 * 1024), !data.isEmpty else { return false }
                 cursor.offset += UInt64(data.count)
                 cursor.remainder.append(data)
                 var lineStart = cursor.remainder.startIndex
                 while let newline = cursor.remainder[lineStart...].firstIndex(of: 0x0A) {
-                    autoreleasepool {
-                        let line = String(decoding: cursor.remainder[lineStart..<newline], as: UTF8.self)
+                    let lineData = cursor.remainder[lineStart..<newline]
+                    let isRelevantEvent = lineData.range(of: Self.eventMessageMarker) != nil
+                        && Self.relevantEventMarkers.contains { lineData.range(of: $0) != nil }
+                    let isResponseUserMessage = lineData.range(of: Self.responseItemMarker) != nil
+                        && lineData.range(of: Self.responseUserRoleMarker) != nil
+                        && lineData.range(of: Self.responseInputTextMarker) != nil
+                    if isRelevantEvent || isResponseUserMessage {
+                        let line = String(decoding: lineData, as: UTF8.self)
                         if let event = Self.parseEvent(
                             line[...],
                             threadID: source.id,
@@ -156,8 +172,12 @@ actor TaskMonitor {
                 if cursor.remainder.count > 8 * 1024 * 1024 {
                     cursor.remainder.removeAll(keepingCapacity: false)
                 }
-            }
+                return true
+            }) {}
             cursors[source.path] = cursor
+            if cursor.offset - startingOffset >= 16 * 1024 * 1024 {
+                malloc_zone_pressure_relief(nil, 0)
+            }
             return events
         } catch {
             return []
@@ -221,7 +241,10 @@ actor TaskMonitor {
             executions[taskID]?.completedAt = pausedAt
             executions[taskID]?.terminalStatus = .paused
         case .userMessage(let message, _):
-            if let id = executions.values
+            if executions[event.id]?.threadID == event.threadID,
+               executions[event.id]?.status == .running {
+                executions[event.id]?.latestUserMessage = message
+            } else if let id = executions.values
                 .filter({ $0.threadID == event.threadID && $0.status == .running })
                 .max(by: { $0.startedAt < $1.startedAt })?.id {
                 executions[id]?.latestUserMessage = message
@@ -237,7 +260,19 @@ actor TaskMonitor {
         title: String,
         projectName: String = ""
     ) -> TaskExecutionEvent? {
-        guard let root = UsageScanner.object(line), root["type"] as? String == "event_msg",
+        guard let root = UsageScanner.object(line),
+              let rootType = root["type"] as? String else { return nil }
+
+        if rootType == "response_item" {
+            return parseResponseUserMessage(
+                root,
+                threadID: threadID,
+                title: title,
+                projectName: projectName
+            )
+        }
+
+        guard rootType == "event_msg",
               let payload = root["payload"] as? [String: Any],
               let type = payload["type"] as? String else { return nil }
 
@@ -288,6 +323,47 @@ actor TaskMonitor {
         default:
             return nil
         }
+    }
+
+    private nonisolated static func parseResponseUserMessage(
+        _ root: [String: Any],
+        threadID: String,
+        title: String,
+        projectName: String
+    ) -> TaskExecutionEvent? {
+        guard let payload = root["payload"] as? [String: Any],
+              payload["type"] as? String == "message",
+              payload["role"] as? String == "user",
+              let content = payload["content"] as? [[String: Any]],
+              let messageAt = UsageScanner.date(root["timestamp"]) else { return nil }
+
+        let rawMessage = content.compactMap { item -> String? in
+            guard item["type"] as? String == "input_text",
+                  let text = item["text"] as? String,
+                  !isInjectedUserContext(text) else { return nil }
+            return text
+        }.joined(separator: "\n")
+        let message = displayText(rawMessage, maximumLength: 160)
+        guard !message.isEmpty else { return nil }
+
+        let metadata = payload["internal_chat_message_metadata_passthrough"] as? [String: Any]
+        let turnID = metadata?["turn_id"] as? String
+        return TaskExecutionEvent(
+            id: turnID ?? threadID,
+            threadID: threadID,
+            title: title,
+            projectName: projectName,
+            startedAt: messageAt,
+            kind: .userMessage(message, messageAt)
+        )
+    }
+
+    private nonisolated static func isInjectedUserContext(_ raw: String) -> Bool {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.hasPrefix("<codex_internal_context ")
+            || text.hasPrefix("<recommended_plugins>")
+            || text.hasPrefix("# AGENTS.md instructions for ")
+            || text.hasPrefix("<environment_context>")
     }
 
     nonisolated static func projectName(from cwd: String) -> String {

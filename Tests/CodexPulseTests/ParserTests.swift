@@ -1,4 +1,5 @@
 import Testing
+import CSQLite
 import Foundation
 @testable import CodexPulse
 
@@ -122,6 +123,48 @@ import Foundation
     #expect(usage.total == 35)
 }
 
+@Test func codexTokenCountParserExtractsOnlyRequiredFieldsWithoutObjectDecoding() {
+    let line = #"""
+    {
+        "ignored": {"nested": [true, null, {"value": "text"}]},
+        "payload": {
+            "rate_limits": {
+                "secondary": {"used_percent": 4.25e1, "resets_at": 1785110400, "window_minutes": 10080},
+                "limit_id": "codex"
+            },
+            "info": {
+                "last_token_usage": {"output_tokens": 5, "cached_input_tokens": 10, "input_tokens": 30},
+                "total_token_usage": {"output_tokens": 25, "cached_input_tokens": 50, "input_tokens": 250}
+            },
+            "type": "token_count"
+        },
+        "type": "event_msg",
+        "timestamp": "2026-07-23T18:00:01.125+08:00"
+    }
+    """#
+    let data = Data(line.utf8)
+    let event = CodexTokenCountParser.parse(data[data.startIndex..<data.endIndex])
+
+    #expect(event?.observedAt == Date(timeIntervalSince1970: 1_784_800_801.125))
+    #expect(event?.cumulative?.input == 200)
+    #expect(event?.cumulative?.cacheRead == 50)
+    #expect(event?.cumulative?.output == 25)
+    #expect(event?.last?.input == 20)
+    #expect(event?.last?.cacheRead == 10)
+    #expect(event?.last?.output == 5)
+    #expect(event?.rateLimits?.isAccountLimit == true)
+    #expect(event?.rateLimits?.secondary?.minutes == 10_080)
+    #expect(event?.rateLimits?.secondary?.usedPercent == 42.5)
+    #expect(event?.rateLimits?.secondary?.resetsAt == 1_785_110_400)
+}
+
+@Test func codexTokenCountParserRejectsMarkerInsideUnrelatedContent() {
+    let line = #"{"timestamp":"2026-07-23T10:00:00Z","type":"response_item","payload":{"type":"message","content":{"type":"token_count"}}}"#
+    let data = Data(line.utf8)
+
+    #expect(CodexTokenCountParser.parse(data[data.startIndex..<data.endIndex]) == nil)
+}
+
 @Test func codexSubagentFirstEventCountsOnlyLastTokenUsage() async throws {
     let home = FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString, directoryHint: .isDirectory)
@@ -139,7 +182,9 @@ import Foundation
     try (lines.joined(separator: "\n") + "\n").data(using: .utf8)!
         .write(to: sessions.appending(path: "child.jsonl"))
 
-    let snapshot = await UsageScanner(home: home, enabledTools: [.codex]).scan()
+    let snapshot = await UsageScanner(home: home, enabledTools: [.codex]).scan(
+        now: UsageScanner.date("2026-07-24T00:00:00Z")!
+    )
 
     // First event: input 100-80=20, cacheRead 80, output 10 (not the 25M baseline).
     // Second event: cumulative delta input 100, cacheRead 200, output 50.
@@ -209,7 +254,9 @@ import Foundation
     try (inside.joined(separator: "\n") + "\n").data(using: .utf8)!
         .write(to: sessions.appending(path: "inside.jsonl"))
 
-    let snapshot = await UsageScanner(home: home, enabledTools: [.codex]).scan()
+    let snapshot = await UsageScanner(home: home, enabledTools: [.codex]).scan(
+        now: UsageScanner.date("2026-07-23T00:00:00Z")!
+    )
 
     #expect(snapshot.usage[.codex]?.total == 330)
     #expect(snapshot.codexTokensInWeeklyWindow == 230)
@@ -229,7 +276,9 @@ import Foundation
     try (lines.joined(separator: "\n") + "\n").data(using: .utf8)!
         .write(to: sessions.appending(path: "session.jsonl"))
 
-    let snapshot = await UsageScanner(home: home, enabledTools: [.codex]).scan()
+    let snapshot = await UsageScanner(home: home, enabledTools: [.codex]).scan(
+        now: UsageScanner.date("2026-07-23T00:00:00Z")!
+    )
 
     #expect(snapshot.usage[.codex]?.total == 15)
     #expect(snapshot.codexTokensInWeeklyWindow == nil)
@@ -396,6 +445,65 @@ import Foundation
     }
     #expect(message == "第一行 第二行")
     #expect(TaskMonitor.projectName(from: "/Users/i/project/Codex Pulse") == "Codex Pulse")
+}
+
+@Test func responseItemUserMessageIsParsedWithItsTurnID() {
+    let line = #"{"timestamp":"2026-08-23T07:00:36.478Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"第一行\n第二行"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}"#
+    let event = TaskMonitor.parseEvent(
+        line[...],
+        threadID: "thread-1",
+        title: "Session",
+        projectName: "Codex Pulse"
+    )
+
+    #expect(event?.id == "turn-1")
+    #expect(event?.projectName == "Codex Pulse")
+    guard case .userMessage(let message, _) = event?.kind else {
+        Issue.record("Expected a response-item user message")
+        return
+    }
+    #expect(message == "第一行 第二行")
+}
+
+@Test func injectedCodexContextsAreNotDisplayedAsUserMessages() {
+    let injectedMessages = [
+        #"<codex_internal_context source=\"goal\">Continue the goal</codex_internal_context>"#,
+        #"<recommended_plugins>Plugin list</recommended_plugins>"#,
+        "# AGENTS.md instructions for /tmp/project",
+        "<environment_context><cwd>/tmp/project</cwd></environment_context>",
+    ]
+
+    for message in injectedMessages {
+        let escapedMessage = message
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let line = #"{"timestamp":"2026-08-23T07:06:16.195Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"\#(escapedMessage)"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}"#
+        #expect(TaskMonitor.parseEvent(line[...], threadID: "thread-1", title: "Session") == nil)
+    }
+}
+
+@Test func insertedConversationUpdatesTheRunningGoalTurn() {
+    let start = #"{"timestamp":"2026-08-23T07:06:15.123Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","started_at":"2026-08-23T07:06:15.123Z"}}"#
+    let goalContext = #"{"timestamp":"2026-08-23T07:06:16.195Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<codex_internal_context source=\"goal\">Continue working</codex_internal_context>"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}"#
+    let insertedConversation = #"{"timestamp":"2026-08-23T07:06:37.146Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"批准修改\n"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}"#
+    var tasks: [String: TaskExecution] = [:]
+    var pending: [String: String] = [:]
+
+    guard let startEvent = TaskMonitor.parseEvent(start[...], threadID: "thread-1", title: "Session"),
+          let conversationEvent = TaskMonitor.parseEvent(
+              insertedConversation[...], threadID: "thread-1", title: "Session"
+          ) else {
+        Issue.record("Expected the task and inserted conversation events")
+        return
+    }
+    #expect(TaskMonitor.parseEvent(goalContext[...], threadID: "thread-1", title: "Session") == nil)
+
+    TaskMonitor.apply(startEvent, to: &tasks, pendingUserMessages: &pending)
+    TaskMonitor.apply(conversationEvent, to: &tasks, pendingUserMessages: &pending)
+
+    #expect(tasks["turn-1"]?.latestUserMessage == "批准修改")
+    #expect(tasks["turn-1"]?.status == .running)
+    #expect(pending.isEmpty)
 }
 
 @Test func overlappingTaskThatCompletesLastRemainsVisible() {
@@ -586,7 +694,8 @@ import Foundation
     defer { try? FileManager.default.removeItem(at: home) }
 
     let file = projects.appending(path: "session.jsonl")
-    let first = #"{"type":"assistant","timestamp":"2026-07-23T10:00:00Z","message":{"id":"message-1","model":"claude-sonnet","usage":{"input_tokens":10,"output_tokens":2}}}"#
+    let firstTimestamp = Date.now.addingTimeInterval(-60).formatted(.iso8601)
+    let first = #"{"type":"assistant","timestamp":"\#(firstTimestamp)","message":{"id":"message-1","model":"claude-sonnet","usage":{"input_tokens":10,"output_tokens":2}}}"#
     try (first + "\n").data(using: .utf8)!.write(to: file)
     let scanner = UsageScanner(home: home, enabledTools: [.claude, .codex])
 
@@ -599,7 +708,8 @@ import Foundation
     #expect(firstStatistics.parsedJSONFiles == 1)
     #expect(unchangedStatistics.parsedJSONFiles == 1)
 
-    let second = #"{"type":"assistant","timestamp":"2026-07-23T10:01:00Z","message":{"id":"message-1","model":"claude-sonnet","usage":{"input_tokens":20,"output_tokens":5}}}"#
+    let secondTimestamp = Date.now.formatted(.iso8601)
+    let second = #"{"type":"assistant","timestamp":"\#(secondTimestamp)","message":{"id":"message-1","model":"claude-sonnet","usage":{"input_tokens":20,"output_tokens":5}}}"#
     let handle = try FileHandle(forWritingTo: file)
     try handle.seekToEnd()
     try handle.write(contentsOf: (second + "\n").data(using: .utf8)!)
@@ -638,6 +748,234 @@ import Foundation
     #expect(snapshot.dailyUsage.allSatisfy { Set($0.usage.keys) == Set(Tool.allCases) })
     #expect(snapshot.activeTools == [.claude, .codex])
     #expect(statistics.parsedJSONFiles == 2)
+    #expect(statistics.acceleratedCodexFiles == 1)
+}
+
+@Test func usageScannerColdStartReadsOnlyFourteenDayCandidatesAndCreatesNoCacheFiles() async throws {
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let projects = home.appending(path: ".claude/projects", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    let now = Date.now
+    let recent = #"{"type":"assistant","timestamp":"\#(now.formatted(.iso8601))","message":{"id":"recent","model":"claude-sonnet","usage":{"input_tokens":10,"output_tokens":2}}}"#
+    let recentFile = projects.appending(path: "recent.jsonl")
+    try (recent + "\n").data(using: .utf8)!.write(to: recentFile)
+
+    // Even deliberately misleading recent content is never opened when the
+    // source file itself has been inactive outside the rolling window.
+    let dormantFile = projects.appending(path: "dormant.jsonl")
+    try (recent.replacingOccurrences(of: #""recent""#, with: #""dormant""#) + "\n")
+        .data(using: .utf8)!.write(to: dormantFile)
+    try FileManager.default.setAttributes(
+        [.modificationDate: now.addingTimeInterval(-15 * 86_400)],
+        ofItemAtPath: dormantFile.path
+    )
+
+    let before = Set(try FileManager.default.subpathsOfDirectory(atPath: home.path))
+    let scanner = UsageScanner(home: home, enabledTools: [.claude])
+    let snapshot = await scanner.scan(now: now)
+    let statistics = await scanner.scanStatistics()
+    let after = Set(try FileManager.default.subpathsOfDirectory(atPath: home.path))
+
+    #expect(snapshot.usage[.claude]?.total == 12)
+    #expect(statistics.parsedJSONFiles == 1)
+    #expect(statistics.activeJSONFiles == 1)
+    #expect(before == after)
+}
+
+@Test func usageScannerSeeksPastTheExpiredPrefixOfAnActiveCodexFile() async throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let now = UsageScanner.date("2026-08-20T12:00:00Z")!
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let sessions = home.appending(path: ".codex/sessions/2026/07/01", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    let metadata = #"{"timestamp":"2026-07-01T00:00:00Z","type":"session_meta","payload":{"session_id":"long-session","id":"long-session"}}"#
+    let expiredPadding = String(repeating: "x", count: 4_096)
+    let expiredLines = (0..<600).map { index in
+        #"{"timestamp":"2026-07-\#(String(format: "%02d", 1 + index / 100))T00:00:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":"\#(expiredPadding)"}}"#
+    }
+    let recentContext = #"{"timestamp":"2026-08-19T10:00:00Z","type":"turn_context","payload":{"model":"gpt-5"}}"#
+    let recentUsage = #"{"timestamp":"2026-08-19T10:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":5},"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":5}}}}"#
+    let contents = ([metadata] + expiredLines + [recentContext, recentUsage]).joined(separator: "\n") + "\n"
+    let file = sessions.appending(path: "rollout-2026-07-01T00-00-00-long.jsonl")
+    try contents.data(using: .utf8)!.write(to: file)
+
+    let scanner = UsageScanner(home: home, enabledTools: [.codex], calendar: calendar)
+    let snapshot = await scanner.scan(now: now)
+    let statistics = await scanner.scanStatistics()
+    let fileBytes = (try FileManager.default.attributesOfItem(atPath: file.path)[.size] as! NSNumber).uint64Value
+
+    #expect(snapshot.usage[.codex]?.total == 15)
+    #expect(statistics.parsedJSONBytes < fileBytes / 10)
+    #expect(statistics.acceleratedCodexFiles == 0)
+}
+
+@Test func usageScannerColdFilterFallsBackForAnIncompleteCodexTail() async throws {
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let sessions = home.appending(path: ".codex/sessions", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    let timestamp = Date.now.formatted(.iso8601)
+    let metadata = #"{"timestamp":"\#(timestamp)","type":"session_meta","payload":{"session_id":"tail","id":"tail"}}"#
+    let usage = #"{"timestamp":"\#(timestamp)","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":20,"cached_input_tokens":5,"output_tokens":3}}}}"#
+    let split = usage.index(usage.startIndex, offsetBy: usage.count / 2)
+    let file = sessions.appending(path: "tail.jsonl")
+    try (metadata + "\n" + usage[..<split]).data(using: .utf8)!.write(to: file)
+
+    let scanner = UsageScanner(home: home, enabledTools: [.codex])
+    let partial = await scanner.scan()
+    #expect(partial.usage[.codex] == .zero)
+    #expect(await scanner.scanStatistics().acceleratedCodexFiles == 0)
+
+    let handle = try FileHandle(forWritingTo: file)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: (String(usage[split...]) + "\n").data(using: .utf8)!)
+    try handle.close()
+
+    let complete = await scanner.scan()
+    #expect(complete.usage[.codex]?.total == 23)
+}
+
+@Test func usageScannerReadsOnlyAppendedBytesAndWaitsForCompleteTailLine() async throws {
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let projects = home.appending(path: ".claude/projects", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    let now = Date.now
+    let first = #"{"type":"assistant","timestamp":"\#(now.addingTimeInterval(-60).formatted(.iso8601))","message":{"id":"m1","model":"claude-sonnet","usage":{"input_tokens":10,"output_tokens":2}}}"#
+    let second = #"{"type":"assistant","timestamp":"\#(now.formatted(.iso8601))","message":{"id":"m2","model":"claude-sonnet","usage":{"input_tokens":20,"output_tokens":5}}}"#
+    let split = second.index(second.startIndex, offsetBy: second.count / 2)
+    let file = projects.appending(path: "session.jsonl")
+    let initialData = (first + "\n" + second[..<split]).data(using: .utf8)!
+    try initialData.write(to: file)
+
+    let scanner = UsageScanner(home: home, enabledTools: [.claude])
+    let partial = await scanner.scan(now: now)
+    let firstStatistics = await scanner.scanStatistics()
+    #expect(partial.usage[.claude]?.total == 12)
+
+    let appendData = (String(second[split...]) + "\n").data(using: .utf8)!
+    let handle = try FileHandle(forWritingTo: file)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: appendData)
+    try handle.close()
+
+    let complete = await scanner.scan(now: now)
+    let secondStatistics = await scanner.scanStatistics()
+    #expect(complete.usage[.claude]?.total == 37)
+    #expect(secondStatistics.parsedJSONBytes - firstStatistics.parsedJSONBytes < UInt64(initialData.count))
+    #expect(secondStatistics.parsedJSONBytes - firstStatistics.parsedJSONBytes == UInt64(second.utf8.count + 1))
+}
+
+@Test func usageScannerPrunesTheFifteenthDayWithoutRereadingHistory() async throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let now = UsageScanner.date("2026-08-20T12:00:00Z")!
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let projects = home.appending(path: ".claude/projects", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+    let oldest = calendar.date(byAdding: .day, value: -13, to: calendar.startOfDay(for: now))!
+    let lines = [
+        #"{"type":"assistant","timestamp":"\#(oldest.formatted(.iso8601))","message":{"id":"oldest","model":"claude-sonnet","usage":{"input_tokens":10,"output_tokens":0}}}"#,
+        #"{"type":"assistant","timestamp":"\#(now.formatted(.iso8601))","message":{"id":"current","model":"claude-sonnet","usage":{"input_tokens":20,"output_tokens":0}}}"#,
+    ]
+    try (lines.joined(separator: "\n") + "\n").data(using: .utf8)!
+        .write(to: projects.appending(path: "session.jsonl"))
+
+    let scanner = UsageScanner(home: home, enabledTools: [.claude], calendar: calendar)
+    let first = await scanner.scan(now: now)
+    let firstStatistics = await scanner.scanStatistics()
+    let rolled = await scanner.scan(now: calendar.date(byAdding: .day, value: 1, to: now)!)
+    let rolledStatistics = await scanner.scanStatistics()
+
+    #expect(first.usage[.claude]?.total == 30)
+    #expect(rolled.usage[.claude]?.total == 20)
+    #expect(rolledStatistics.parsedJSONBytes == firstStatistics.parsedJSONBytes)
+    #expect(rolledStatistics.retainedUsageRecords == 1)
+}
+
+@Test func usageScannerRebuildsOnlyAReplacedFile() async throws {
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let projects = home.appending(path: ".claude/projects", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+    let timestamp = Date.now.formatted(.iso8601)
+    let file = projects.appending(path: "session.jsonl")
+    let original = #"{"type":"assistant","timestamp":"\#(timestamp)","message":{"id":"original-long-id","model":"claude-sonnet","usage":{"input_tokens":100,"output_tokens":20}}}"#
+    try (original + "\n").data(using: .utf8)!.write(to: file)
+    let scanner = UsageScanner(home: home, enabledTools: [.claude])
+    _ = await scanner.scan()
+
+    let replacement = #"{"type":"assistant","timestamp":"\#(timestamp)","message":{"id":"new","model":"claude-sonnet","usage":{"input_tokens":7,"output_tokens":3}}}"#
+    try (replacement + "\n").data(using: .utf8)!.write(to: file)
+    let snapshot = await scanner.scan()
+
+    #expect(snapshot.usage[.claude]?.total == 10)
+    #expect(await scanner.scanStatistics().retainedUsageRecords == 1)
+}
+
+@Test func openCodeUsageScannerQueriesAndDecodesOnlyChangedRecentRows() async throws {
+    let home = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let directory = home.appending(path: ".local/share/opencode", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+    let database = directory.appending(path: "opencode.db")
+    var db: OpaquePointer?
+    #expect(sqlite3_open(database.path, &db) == SQLITE_OK)
+    defer { sqlite3_close(db) }
+    #expect(sqlite3_exec(db, "CREATE TABLE message (id TEXT PRIMARY KEY, time_created INTEGER, time_updated INTEGER, data TEXT)", nil, nil, nil) == SQLITE_OK)
+
+    let now = Date.now
+    let recentMS = Int64(now.timeIntervalSince1970 * 1_000)
+    let oldMS = Int64(now.addingTimeInterval(-15 * 86_400).timeIntervalSince1970 * 1_000)
+    func insert(_ id: String, milliseconds: Int64, input: Int) {
+        let json = #"{"role":"assistant","time":{"completed":\#(milliseconds)},"tokens":{"input":\#(input),"output":1}}"#
+        var statement: OpaquePointer?
+        sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO message VALUES (?1, ?2, ?3, ?4)", -1, &statement, nil)
+        defer { sqlite3_finalize(statement) }
+        let transient = unsafeBitCast(-1 as Int, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(statement, 1, id, -1, transient)
+        sqlite3_bind_int64(statement, 2, milliseconds)
+        sqlite3_bind_int64(statement, 3, milliseconds)
+        sqlite3_bind_text(statement, 4, json, -1, transient)
+        #expect(sqlite3_step(statement) == SQLITE_DONE)
+    }
+    insert("old", milliseconds: oldMS, input: 99)
+    insert("recent", milliseconds: recentMS, input: 10)
+
+    let scanner = UsageScanner(home: home, enabledTools: [.opencode])
+    let cold = await scanner.scan(now: now)
+    let coldStatistics = await scanner.scanStatistics()
+    let unchanged = await scanner.scan(now: now)
+    let unchangedStatistics = await scanner.scanStatistics()
+    #expect(cold.usage[.opencode]?.total == 11)
+    #expect(unchanged.usage[.opencode]?.total == 11)
+    #expect(coldStatistics.parsedOpenCodeRows == 1)
+    #expect(unchangedStatistics.parsedOpenCodeRows == 1)
+
+    insert("recent-2", milliseconds: recentMS + 1, input: 20)
+    let appended = await scanner.scan(now: now)
+    #expect(appended.usage[.opencode]?.total == 32)
+    #expect(await scanner.scanStatistics().parsedOpenCodeRows == 2)
+
+    #expect(sqlite3_exec(db, "DELETE FROM message WHERE id='recent'", nil, nil, nil) == SQLITE_OK)
+    let deleted = await scanner.scan(now: now)
+    #expect(deleted.usage[.opencode]?.total == 21)
+    #expect(await scanner.scanStatistics().parsedOpenCodeRows == 2)
 }
 
 // MARK: - Claude Code task monitoring
