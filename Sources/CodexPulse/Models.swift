@@ -81,6 +81,8 @@ struct TaskExecution: Identifiable, Sendable, Equatable {
     /// Explicit non-success terminal state. A nil value preserves the
     /// existing completed-at representation for ordinary completions.
     var terminalStatus: TaskExecutionStatus? = nil
+    /// Codex activity only; inferred pauses never mutate the stored terminal state.
+    var lastActivityAt: Date? = nil
 
     var status: TaskExecutionStatus {
         terminalStatus ?? (completedAt == nil ? .running : .completed)
@@ -98,6 +100,7 @@ enum TaskExecutionStatus: Sendable, Equatable {
 
 enum TaskEventKind: Sendable {
     case started
+    case activity(Date)
     case completed(Date)
     case aborted(Date)
     case goalPaused(Date)
@@ -115,6 +118,7 @@ struct TaskExecutionEvent: Sendable {
     var eventDate: Date {
         switch kind {
         case .started: startedAt
+        case .activity(let date): date
         case .completed(let date): date
         case .aborted(let date): date
         case .goalPaused(let date): date

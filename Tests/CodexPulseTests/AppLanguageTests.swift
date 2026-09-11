@@ -65,22 +65,22 @@ import Testing
     let now = Date(timeIntervalSince1970: 1_800_000_000)
     let reset = now.addingTimeInterval(3_661)
 
-    #expect(WeeklyLimitCountdown.format(reset: reset, now: now) == "倒计时 1小时 1分钟")
-    #expect(WeeklyLimitCountdown.format(reset: reset, now: now, language: .english) == "Remaining 1h 1m")
-    #expect(WeeklyLimitCountdown.format(reset: reset, now: now, language: .japanese) == "残り 1時間 1分")
+    #expect(WeeklyLimitCountdown.format(reset: reset, now: now) == "1小时 1分钟后重置")
+    #expect(WeeklyLimitCountdown.format(reset: reset, now: now, language: .english) == "Resets in 1h 1m")
+    #expect(WeeklyLimitCountdown.format(reset: reset, now: now, language: .japanese) == "1時間 1分後にリセット")
     #expect(AppLanguage.english.shortDate(now) != AppLanguage.japanese.shortDate(now))
 }
 
-@Test func compactCountdownDropsTheLeadingLabel() {
+@Test func compactCountdownPreservesResetMeaning() {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
     let reset = now.addingTimeInterval(3_661)
 
-    #expect(WeeklyLimitCountdown.format(reset: reset, now: now, compact: true) == "1小时 1分钟")
-    #expect(WeeklyLimitCountdown.format(reset: reset, now: now, language: .english, compact: true) == "1h 1m")
-    #expect(WeeklyLimitCountdown.format(reset: reset, now: now, language: .korean, compact: true) == "1시간 1분")
+    #expect(WeeklyLimitCountdown.format(reset: reset, now: now, compact: true) == "1小时 1分钟后重置")
+    #expect(WeeklyLimitCountdown.format(reset: reset, now: now, language: .english, compact: true) == "Resets in 1h 1m")
+    #expect(WeeklyLimitCountdown.format(reset: reset, now: now, language: .korean, compact: true) == "1시간 1분 후 초기화")
 
     let underMinute = now.addingTimeInterval(30)
-    #expect(WeeklyLimitCountdown.format(reset: underMinute, now: now, compact: true) == "<1分钟")
+    #expect(WeeklyLimitCountdown.format(reset: underMinute, now: now, compact: true) == "<1分钟后重置")
 }
 
 @Test func resetTextUsesRelativeDaysAndKeepsTimeOnlyAtRegularWidth() throws {

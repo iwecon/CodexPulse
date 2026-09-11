@@ -85,119 +85,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-@MainActor @Observable
-final class UsageModel {
-    var snapshot = Snapshot()
-    /// False until the first scan completes, while the panel shows a
-    /// loading indicator instead of an empty trend.
-    private(set) var hasLoadedSnapshot = false
-    var tasks: [TaskExecution] = []
-    private(set) var isTaskStatusAnimationPaused = false
-    private let scanner = UsageScanner()
-    private let taskMonitor = TaskMonitor()
-    private let claudeTaskMonitor = ClaudeTaskMonitor()
-    private let openCodeTaskMonitor = OpenCodeTaskMonitor()
-    private var started = false
-    private var refreshGate = RefreshActivityGate()
-    private var usageLoopTask: Task<Void, Never>?
-    private var taskLoopTask: Task<Void, Never>?
-
-    func start() {
-        guard !started else { return }
-        started = true
-        startLoopsIfAllowed()
-    }
-
-    func stop() {
-        started = false
-        stopLoops()
-    }
-
-    func setRefreshSuspended(
-        _ suspended: Bool,
-        for reason: RefreshSuspensionReason
-    ) {
-        let transition = refreshGate.setSuspended(suspended, for: reason)
-        isTaskStatusAnimationPaused = !refreshGate.allowsRefresh
-        switch transition {
-        case .becameSuspended:
-            stopLoops()
-        case .becameActive:
-            startLoopsIfAllowed()
-        case .unchanged:
-            break
-        }
-    }
-
-    private func startLoopsIfAllowed() {
-        guard started, refreshGate.allowsRefresh else { return }
-        if usageLoopTask == nil {
-            usageLoopTask = Task { [weak self] in
-                await self?.runUsageLoop()
-            }
-        }
-        if taskLoopTask == nil {
-            taskLoopTask = Task { [weak self] in
-                await self?.runTaskLoop()
-            }
-        }
-    }
-
-    private func stopLoops() {
-        usageLoopTask?.cancel()
-        usageLoopTask = nil
-        taskLoopTask?.cancel()
-        taskLoopTask = nil
-    }
-
-    private func runUsageLoop() async {
-        await refresh()
-        while !Task.isCancelled {
-            do {
-                try await Task.sleep(for: .seconds(60))
-            } catch {
-                return
-            }
-            await refresh()
-        }
-    }
-
-    private func runTaskLoop() async {
-        while !Task.isCancelled {
-            guard refreshGate.allowsRefresh else { return }
-            async let codexTasks = taskMonitor.scan()
-            async let claudeTasks = claudeTaskMonitor.scan()
-            async let openCodeTasks = openCodeTaskMonitor.scan()
-            let newTasks = TaskMonitor.sortedForDisplay(
-                await codexTasks + claudeTasks + openCodeTasks
-            )
-            guard !Task.isCancelled, refreshGate.allowsRefresh else { return }
-            if newTasks != tasks { tasks = newTasks }
-            do {
-                try await Task.sleep(for: .seconds(2))
-            } catch {
-                return
-            }
-        }
-    }
-
-    func refresh() async {
-        guard refreshGate.allowsRefresh else { return }
-        let newSnapshot = await scanner.scan()
-        guard !Task.isCancelled, refreshGate.allowsRefresh else { return }
-        if !snapshot.hasSameContent(as: newSnapshot) { snapshot = newSnapshot }
-        hasLoadedSnapshot = true
-    }
-
-    nonisolated static func compact(_ number: Int) -> String {
-        if number >= 1_000_000_000_000 { return String(format: "%.1fT", Double(number) / 1_000_000_000_000) }
-        if number >= 1_000_000_000 { return String(format: "%.1fB", Double(number) / 1_000_000_000) }
-        if number >= 1_000_000 { return String(format: "%.1fM", Double(number) / 1_000_000) }
-        if number >= 1_000 { return String(format: "%.1fK", Double(number) / 1_000) }
-        return "\(number)"
-    }
-}
-
 @MainActor
 final class DockPanelController {
     private struct ResizeDrag {
@@ -269,14 +156,23 @@ final class DockPanelController {
             guard identity == .taskActivity, let self else { return nil }
             return taskActivityTextAlignment.controlPresentation(language: languageSettings.language)
         },
+        taskVisibilityPresentation: { [weak self] identity in
+            guard let self else { return nil }
+            if identity == .taskActivity {
+                return PanelMovementPresentation(systemImageName: "eye.slash", label: languageSettings.language.hideTaskActivityPanel)
+            }
+            guard model.isTaskActivityHidden else { return nil }
+            return PanelMovementPresentation(systemImageName: "list.bullet.rectangle", label: languageSettings.language.showTaskActivityPanel)
+        },
         weeklyLimitTogglePresentation: { [weak self] identity in
             guard identity == .usageOverview, let self,
                   model.snapshot.weeklyLimitWindow != nil else { return nil }
             return PanelMovementPresentation(
                 systemImageName: hidesWeeklyLimit ? "eye" : "eye.slash",
-                label: hidesWeeklyLimit
+                label: (hidesWeeklyLimit
                     ? languageSettings.language.showWeeklyQuota
-                    : languageSettings.language.hideWeeklyQuota
+                    : languageSettings.language.hideWeeklyQuota)
+                    + "\n" + languageSettings.language.weeklyTokenEstimateHelp
             )
         },
         usageLegendItems: { [weak self] identity in
@@ -308,6 +204,9 @@ final class DockPanelController {
         },
         onToggleTaskTextAlignment: { [weak self] identity in
             self?.toggleTaskTextAlignment(for: identity)
+        },
+        onToggleTaskVisibility: { [weak self] _ in
+            self?.toggleTaskActivityVisibility()
         },
         onToggleWeeklyLimitVisibility: { [weak self] identity in
             self?.toggleWeeklyLimitVisibility(for: identity)
@@ -362,13 +261,14 @@ final class DockPanelController {
             size: NSSize(width: preferences.usageOverviewPreferredWidth, height: 56)
         )
         rightPanel = Self.panel(
-            rootView: AnyView(TaskExecutionView(
+            rootView: model.isTaskActivityHidden ? AnyView(EmptyView()) : AnyView(TaskExecutionView(
                 model: model,
                 presentation: presentationState,
                 languageSettings: languageSettings,
                 barColorSettings: barColorSettings
             )),
-            size: NSSize(width: preferences.taskActivityPreferredWidth, height: taskPlan.panelHeight)
+            size: NSSize(width: preferences.taskActivityPreferredWidth, height: model.isTaskActivityHidden
+                ? max(taskPlan.panelHeight, defaults.double(forKey: "hiddenTaskActivityHeight")) : taskPlan.panelHeight)
         )
         observedSystemAppearance = Self.currentSystemAppearance
         notificationObservers.append(NotificationCenter.default.addObserver(
@@ -412,7 +312,8 @@ final class DockPanelController {
         observeBarColorChanges()
         positionPanels()
         leftPanel.orderFrontRegardless()
-        rightPanel.orderFrontRegardless()
+        if !model.isTaskActivityHidden { rightPanel.orderFrontRegardless() }
+        resizeController.setPanelEnabled(!model.isTaskActivityHidden, for: .taskActivity)
         resizeController.startMonitoring()
     }
 
@@ -434,6 +335,28 @@ final class DockPanelController {
         panel.isMovable = false
         panel.isReleasedWhenClosed = false
         return panel
+    }
+
+    private func toggleTaskActivityVisibility() {
+        let hidden = !model.isTaskActivityHidden
+        model.setTaskActivityHidden(hidden)
+        resizeDrag = nil
+        if hidden {
+            defaults.set(rightPanel.frame.height, forKey: "hiddenTaskActivityHeight")
+            rightPanel.orderOut(nil)
+            rightPanel.contentView = nil
+            sessionLinkController.removeAll()
+            taskActivityAppearance = nil
+        } else {
+            rightPanel.contentView = NSHostingView(rootView: TaskExecutionView(
+                model: model, presentation: presentationState,
+                languageSettings: languageSettings, barColorSettings: barColorSettings
+            ).allowsHitTesting(false))
+        }
+        resizeController.setPanelEnabled(!hidden, for: .taskActivity)
+        resizeController.setAppearance(rightPanel.appearance, for: .taskActivity)
+        positionPanels()
+        if !hidden { rightPanel.orderFrontRegardless() }
     }
 
     private func positionPanels(
@@ -461,7 +384,7 @@ final class DockPanelController {
                 usagePreferredWidth: usageOverviewPreferredWidth,
                 taskPreferredWidth: taskActivityPreferredWidth,
                 usageHeight: leftPanel.frame.height,
-                taskHeight: provisionalPlan.panelHeight
+                taskHeight: model.isTaskActivityHidden ? rightPanel.frame.height : provisionalPlan.panelHeight
             ),
             inset: inset,
             gap: gap
@@ -478,7 +401,7 @@ final class DockPanelController {
                 usagePreferredWidth: usageOverviewPreferredWidth,
                 taskPreferredWidth: taskActivityPreferredWidth,
                 usageHeight: leftPanel.frame.height,
-                taskHeight: taskPlan.panelHeight
+                taskHeight: model.isTaskActivityHidden ? rightPanel.frame.height : taskPlan.panelHeight
             ),
             inset: inset,
             gap: gap
@@ -486,15 +409,17 @@ final class DockPanelController {
         if let usageFrame = frames[.usageOverview] {
             if leftPanel.frame != usageFrame { leftPanel.setFrame(usageFrame, display: true) }
         }
-        if let taskFrame = frames[.taskActivity] {
+        if !model.isTaskActivityHidden, let taskFrame = frames[.taskActivity] {
             if rightPanel.frame != taskFrame { rightPanel.setFrame(taskFrame, display: true) }
         }
-        sessionLinkController.update(
-            taskPanelFrame: rightPanel.frame,
-            plan: taskPlan,
-            language: languageSettings.language,
-            textAlignment: taskActivityTextAlignment.resolved(for: arrangement.taskSide)
-        )
+        if !model.isTaskActivityHidden {
+            sessionLinkController.update(
+                taskPanelFrame: rightPanel.frame,
+                plan: taskPlan,
+                language: languageSettings.language,
+                textAlignment: taskActivityTextAlignment.resolved(for: arrangement.taskSide)
+            )
+        }
         resizeController.panelFramesDidChange(metrics: DockPanelOverlayMetrics(
             screenFrame: frame,
             dockFrame: dockFrame,
@@ -556,7 +481,7 @@ final class DockPanelController {
                 identifier: 1,
                 frame: rightPanel.frame.offsetBy(dx: -screenOrigin.x, dy: -screenOrigin.y)
             )
-        ]
+        ].filter { $0.identifier == 0 || !model.isTaskActivityHidden }
         let refreshState = WallpaperRefreshState(
             signature: WallpaperStateSignature(
                 image: nil,
@@ -582,18 +507,12 @@ final class DockPanelController {
             scalingMode: source.preferredScalingMode
                 ?? .desktopImageMode(scaling: scaling, allowClipping: allowClipping),
             fillColor: fillColor,
-            panelRegions: [
+            panelRegions: panelRegions.map { region in
                 WallpaperPanelRegion(
-                    identifier: 0,
-                    frame: panelRegions[0].frame,
-                    previousAppearance: usageOverviewAppearance
-                ),
-                WallpaperPanelRegion(
-                    identifier: 1,
-                    frame: panelRegions[1].frame,
-                    previousAppearance: taskActivityAppearance
+                    identifier: region.identifier, frame: region.frame,
+                    previousAppearance: region.identifier == 0 ? usageOverviewAppearance : taskActivityAppearance
                 )
-            ]
+            }
         )
         wallpaperAppearanceTask = Task { [weak self, wallpaperAppearanceSampler] in
             if case .resample(invalidateDecodedWallpaper: true) = transition {
@@ -1242,7 +1161,7 @@ struct WeeklyLimitView: View {
 
     /// Below this measured width the quota texts switch to their compact
     /// forms: percent without labels, reset date without time, countdown
-    /// without its leading label, and the consumed tokens as a bare figure.
+    /// without its leading label, and the weekly token figures without labels.
     private static let compactWidthThreshold: CGFloat = 150
     @State private var sectionWidth: CGFloat = .infinity
     private var isCompact: Bool { sectionWidth < Self.compactWidthThreshold }
@@ -1307,12 +1226,13 @@ struct WeeklyLimitView: View {
                     .foregroundStyle(.secondary)
                     Spacer(minLength: 2)
                     if let windowTokens = model.snapshot.codexTokensInWeeklyWindow {
-                        Text(isCompact
-                            ? UsageModel.compact(windowTokens)
-                            : languageSettings.language.weeklyWindowConsumedTokens(
-                                UsageModel.compact(windowTokens)
-                            ))
-                        .dockPanelTextShadow()
+                        WeeklyTokenUsageText(
+                            used: windowTokens,
+                            estimatedTotal: model.snapshot.estimatedCodexWeeklyTokenTotal,
+                            language: languageSettings.language,
+                            compact: isCompact
+                        )
+                        .modifier(DockPanelTextShadow())
                         .monospacedDigit()
                         .lineLimit(1)
                         .foregroundStyle(.secondary)

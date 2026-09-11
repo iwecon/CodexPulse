@@ -88,6 +88,14 @@ final class CodexSessionLinkController {
         }
     }
 
+    func removeAll() {
+        for panel in panels.values {
+            panel.contentView = nil
+            panel.close()
+        }
+        panels.removeAll(keepingCapacity: false)
+    }
+
     func update(
         taskPanelFrame: CGRect,
         plan: TaskExecutionLayout.Plan,

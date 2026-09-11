@@ -77,15 +77,22 @@ actor ClaudeTaskMonitor {
     }
 
     func scan(now: Date = Date()) -> [TaskExecution] {
+        autoreleasepool { scanContents(now: now) }
+    }
+
+    private func scanContents(now: Date) -> [TaskExecution] {
+        guard !Task.isCancelled else { return [] }
         let sources = recentTranscripts(now: now)
         let livePaths = Set(sources.map(\.path))
         cursors = cursors.filter { livePaths.contains($0.key) }
         threadsByPath = threadsByPath.filter { livePaths.contains($0.key) }
 
         for source in sources {
+            guard !Task.isCancelled else { return [] }
             let read = readNewLines(from: source)
             var threads = threadsByPath[source.path] ?? []
             for line in read.lines {
+                guard !Task.isCancelled else { return [] }
                 apply(line)
                 if let threadID = line.threadID { threads.insert(threadID) }
             }
@@ -124,11 +131,13 @@ actor ClaudeTaskMonitor {
         )) ?? []
         var fresh: [(URL, Date)] = []
         for directory in projectDirectories {
+            guard !Task.isCancelled else { return [] }
             let files = (try? FileManager.default.contentsOfDirectory(
                 at: directory,
                 includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey]
             )) ?? []
             for file in files where file.pathExtension == "jsonl" {
+                guard !Task.isCancelled else { return [] }
                 guard let values = try? file.resourceValues(
                     forKeys: [.contentModificationDateKey, .isRegularFileKey]
                 ), values.isRegularFile == true,
@@ -174,11 +183,13 @@ actor ClaudeTaskMonitor {
             try handle.seek(toOffset: cursor.offset)
             var lines: [ParsedLine] = []
             while try autoreleasepool(invoking: { () throws -> Bool in
+                guard !Task.isCancelled else { return false }
                 guard let data = try handle.read(upToCount: 64 * 1024), !data.isEmpty else { return false }
                 cursor.offset += UInt64(data.count)
                 cursor.remainder.append(data)
                 var lineStart = cursor.remainder.startIndex
                 while let newline = cursor.remainder[lineStart...].firstIndex(of: 0x0A) {
+                    guard !Task.isCancelled else { return false }
                     let line = String(decoding: cursor.remainder[lineStart..<newline], as: UTF8.self)
                     if let parsed = Self.parseLine(line[...]) {
                         lines.append(parsed)

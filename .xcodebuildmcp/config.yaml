@@ -1,0 +1,6 @@
+schemaVersion: 1
+sessionDefaults:
+  extraArgs:
+    - -parallel-testing-enabled
+    - NO
+    - -disable-concurrent-destination-testing

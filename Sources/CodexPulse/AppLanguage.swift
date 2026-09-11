@@ -305,6 +305,26 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    var hideTaskActivityPanel: String {
+        switch self {
+        case .simplifiedChineseMainland: "隐藏任务活动面板"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "隱藏任務活動面板"
+        case .japanese: "タスクアクティビティパネルを非表示"
+        case .korean: "작업 활동 패널 숨기기"
+        case .english: "Hide Task Activity Panel"
+        }
+    }
+
+    var showTaskActivityPanel: String {
+        switch self {
+        case .simplifiedChineseMainland: "显示任务活动面板"
+        case .traditionalChineseHongKong, .traditionalChineseTaiwan: "顯示任務活動面板"
+        case .japanese: "タスクアクティビティパネルを表示"
+        case .korean: "작업 활동 패널 표시"
+        case .english: "Show Task Activity Panel"
+        }
+    }
+
     var runningTask: String {
         switch self {
         case .simplifiedChineseMainland: "任务执行中"
@@ -443,61 +463,61 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
     func countdown(days: Int, hours: Int, minutes: Int) -> String {
         switch self {
         case .simplifiedChineseMainland:
-            if days > 0 { return "倒计时 \(days)天 \(hours)小时" }
-            if hours > 0 { return "倒计时 \(hours)小时 \(minutes)分钟" }
-            if minutes > 0 { return "倒计时 \(minutes)分钟" }
-            return "倒计时 小于1分钟"
+            if days > 0 { return "\(days)天 \(hours)小时后重置" }
+            if hours > 0 { return "\(hours)小时 \(minutes)分钟后重置" }
+            if minutes > 0 { return "\(minutes)分钟后重置" }
+            return "小于1分钟后重置"
         case .traditionalChineseHongKong, .traditionalChineseTaiwan:
-            if days > 0 { return "倒數 \(days)日 \(hours)小時" }
-            if hours > 0 { return "倒數 \(hours)小時 \(minutes)分鐘" }
-            if minutes > 0 { return "倒數 \(minutes)分鐘" }
-            return "倒數 少於1分鐘"
+            if days > 0 { return "\(days)日 \(hours)小時後重設" }
+            if hours > 0 { return "\(hours)小時 \(minutes)分鐘後重設" }
+            if minutes > 0 { return "\(minutes)分鐘後重設" }
+            return "少於1分鐘後重設"
         case .japanese:
-            if days > 0 { return "残り \(days)日 \(hours)時間" }
-            if hours > 0 { return "残り \(hours)時間 \(minutes)分" }
-            if minutes > 0 { return "残り \(minutes)分" }
-            return "残り1分未満"
+            if days > 0 { return "\(days)日 \(hours)時間後にリセット" }
+            if hours > 0 { return "\(hours)時間 \(minutes)分後にリセット" }
+            if minutes > 0 { return "\(minutes)分後にリセット" }
+            return "1分以内にリセット"
         case .korean:
-            if days > 0 { return "남은 시간 \(days)일 \(hours)시간" }
-            if hours > 0 { return "남은 시간 \(hours)시간 \(minutes)분" }
-            if minutes > 0 { return "남은 시간 \(minutes)분" }
-            return "남은 시간 1분 미만"
+            if days > 0 { return "\(days)일 \(hours)시간 후 초기화" }
+            if hours > 0 { return "\(hours)시간 \(minutes)분 후 초기화" }
+            if minutes > 0 { return "\(minutes)분 후 초기화" }
+            return "1분 미만 후 초기화"
         case .english:
-            if days > 0 { return "Remaining \(days)d \(hours)h" }
-            if hours > 0 { return "Remaining \(hours)h \(minutes)m" }
-            if minutes > 0 { return "Remaining \(minutes)m" }
-            return "Less than 1m remaining"
+            if days > 0 { return "Resets in \(days)d \(hours)h" }
+            if hours > 0 { return "Resets in \(hours)h \(minutes)m" }
+            if minutes > 0 { return "Resets in \(minutes)m" }
+            return "Resets in less than 1m"
         }
     }
 
-    /// Narrow-panel variant of `countdown`: same units, no leading label.
+    /// Narrow-panel variant of `countdown`: same units and reset meaning, abbreviated sub-minute text.
     func countdownCompact(days: Int, hours: Int, minutes: Int) -> String {
         switch self {
         case .simplifiedChineseMainland:
-            if days > 0 { return "\(days)天 \(hours)小时" }
-            if hours > 0 { return "\(hours)小时 \(minutes)分钟" }
-            if minutes > 0 { return "\(minutes)分钟" }
-            return "<1分钟"
+            if days > 0 { return "\(days)天 \(hours)小时后重置" }
+            if hours > 0 { return "\(hours)小时 \(minutes)分钟后重置" }
+            if minutes > 0 { return "\(minutes)分钟后重置" }
+            return "<1分钟后重置"
         case .traditionalChineseHongKong, .traditionalChineseTaiwan:
-            if days > 0 { return "\(days)日 \(hours)小時" }
-            if hours > 0 { return "\(hours)小時 \(minutes)分鐘" }
-            if minutes > 0 { return "\(minutes)分鐘" }
-            return "<1分鐘"
+            if days > 0 { return "\(days)日 \(hours)小時後重設" }
+            if hours > 0 { return "\(hours)小時 \(minutes)分鐘後重設" }
+            if minutes > 0 { return "\(minutes)分鐘後重設" }
+            return "<1分鐘後重設"
         case .japanese:
-            if days > 0 { return "\(days)日 \(hours)時間" }
-            if hours > 0 { return "\(hours)時間 \(minutes)分" }
-            if minutes > 0 { return "\(minutes)分" }
-            return "1分未満"
+            if days > 0 { return "\(days)日 \(hours)時間後にリセット" }
+            if hours > 0 { return "\(hours)時間 \(minutes)分後にリセット" }
+            if minutes > 0 { return "\(minutes)分後にリセット" }
+            return "1分以内にリセット"
         case .korean:
-            if days > 0 { return "\(days)일 \(hours)시간" }
-            if hours > 0 { return "\(hours)시간 \(minutes)분" }
-            if minutes > 0 { return "\(minutes)분" }
-            return "1분 미만"
+            if days > 0 { return "\(days)일 \(hours)시간 후 초기화" }
+            if hours > 0 { return "\(hours)시간 \(minutes)분 후 초기화" }
+            if minutes > 0 { return "\(minutes)분 후 초기화" }
+            return "1분 미만 후 초기화"
         case .english:
-            if days > 0 { return "\(days)d \(hours)h" }
-            if hours > 0 { return "\(hours)h \(minutes)m" }
-            if minutes > 0 { return "\(minutes)m" }
-            return "<1m"
+            if days > 0 { return "Resets in \(days)d \(hours)h" }
+            if hours > 0 { return "Resets in \(hours)h \(minutes)m" }
+            if minutes > 0 { return "Resets in \(minutes)m" }
+            return "Resets in <1m"
         }
     }
 

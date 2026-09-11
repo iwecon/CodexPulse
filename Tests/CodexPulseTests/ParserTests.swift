@@ -56,23 +56,23 @@ import Testing
     #expect(WeeklyLimitCountdown.format(
         reset: now.addingTimeInterval(5 * 86_400 + 16 * 3_600 + 32 * 60 + 45),
         now: now
-    ) == "倒计时 5天 16小时")
+    ) == "5天 16小时后重置")
     #expect(WeeklyLimitCountdown.format(
         reset: now.addingTimeInterval(16 * 3_600 + 32 * 60 + 59),
         now: now
-    ) == "倒计时 16小时 32分钟")
+    ) == "16小时 32分钟后重置")
     #expect(WeeklyLimitCountdown.format(
         reset: now.addingTimeInterval(10 * 60 + 59),
         now: now
-    ) == "倒计时 10分钟")
+    ) == "10分钟后重置")
     #expect(WeeklyLimitCountdown.format(
         reset: now.addingTimeInterval(59),
         now: now
-    ) == "倒计时 小于1分钟")
+    ) == "小于1分钟后重置")
     #expect(WeeklyLimitCountdown.format(
         reset: now.addingTimeInterval(-1),
         now: now
-    ) == "倒计时 小于1分钟")
+    ) == "小于1分钟后重置")
 }
 
 @Test func dailyUsageAlwaysCoversFourteenCalendarDays() {
@@ -457,7 +457,7 @@ import Testing
     #expect(event?.startedAt == Date(timeIntervalSince1970: 1_784_800_800))
 }
 
-@Test func userAbortedTaskIsTerminated() {
+@Test func userAbortedTaskIsPaused() {
     let start = #"{"timestamp":"2026-07-23T10:00:00Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","started_at":1784800800}}"#
     let abort = #"{"timestamp":"2026-07-23T10:01:00Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"turn-1","started_at":1784800800,"completed_at":1784800860,"reason":"interrupted"}}"#
     var tasks: [String: TaskExecution] = [:]
@@ -471,7 +471,7 @@ import Testing
         TaskMonitor.apply(event, to: &tasks, pendingUserMessages: &pending)
     }
 
-    #expect(tasks["turn-1"]?.status == .terminated)
+    #expect(tasks["turn-1"]?.status == .paused)
     #expect(tasks["turn-1"]?.completedAt == Date(timeIntervalSince1970: 1_784_800_860))
 }
 

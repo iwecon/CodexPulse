@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 
 actor TaskMonitor {
+    static let runningStaleInterval: TimeInterval = 3 * 60
     private static let eventMessageMarker = Data(#""type":"event_msg""#.utf8)
     private static let responseItemMarker = Data(#""type":"response_item""#.utf8)
     private static let responseUserRoleMarker = Data(#""role":"user""#.utf8)
@@ -20,6 +21,7 @@ actor TaskMonitor {
     private struct FileCursor {
         var offset: UInt64 = 0
         var remainder = Data()
+        var discardingLine = false
     }
 
     private let home: URL
@@ -35,6 +37,11 @@ actor TaskMonitor {
     }
 
     func scan(now: Date = Date()) -> [TaskExecution] {
+        autoreleasepool { scanContents(now: now) }
+    }
+
+    private func scanContents(now: Date) -> [TaskExecution] {
+        guard !Task.isCancelled else { return [] }
         guard let sources = recentThreads(now: now) else { return Self.visible(executions, now: now) }
         let sourceIDs = Set(sources.map(\.id))
         let sourcePaths = Set(sources.map(\.path))
@@ -53,8 +60,10 @@ actor TaskMonitor {
 
         var events: [TaskExecutionEvent] = []
         for source in sources {
+            guard !Task.isCancelled else { return [] }
             events.append(contentsOf: readNewEvents(from: source))
         }
+        guard !Task.isCancelled else { return [] }
         for event in events.sorted(by: { $0.eventDate < $1.eventDate }) {
             apply(event)
         }
@@ -107,7 +116,7 @@ actor TaskMonitor {
         defer { sqlite3_finalize(statement) }
 
         var result: [ThreadSource] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        while !Task.isCancelled, sqlite3_step(statement) == SQLITE_ROW {
             guard let id = sqlite3_column_text(statement, 0),
                   let title = sqlite3_column_text(statement, 1),
                   let path = sqlite3_column_text(statement, 2),
@@ -141,12 +150,22 @@ actor TaskMonitor {
             try handle.seek(toOffset: cursor.offset)
             let startingOffset = cursor.offset
             var events: [TaskExecutionEvent] = []
+            var hasUnstampedData = false
             while try autoreleasepool(invoking: { () throws -> Bool in
+                guard !Task.isCancelled else { return false }
                 guard let data = try handle.read(upToCount: 64 * 1024), !data.isEmpty else { return false }
                 cursor.offset += UInt64(data.count)
+                var searchStart = cursor.remainder.endIndex
                 cursor.remainder.append(data)
                 var lineStart = cursor.remainder.startIndex
-                while let newline = cursor.remainder[lineStart...].firstIndex(of: 0x0A) {
+                while let newline = Self.newline(in: cursor.remainder, from: searchStart) {
+                    guard !Task.isCancelled else { return false }
+                    if cursor.discardingLine {
+                        cursor.discardingLine = false
+                        lineStart = cursor.remainder.index(after: newline)
+                        searchStart = lineStart
+                        continue
+                    }
                     let lineData = cursor.remainder[lineStart..<newline]
                     let isRelevantEvent = lineData.range(of: Self.eventMessageMarker) != nil
                         && Self.relevantEventMarkers.contains { lineData.range(of: $0) != nil }
@@ -164,16 +183,52 @@ actor TaskMonitor {
                             events.append(event)
                         }
                     }
+                    if let activityAt = Self.activityTimestamp(in: lineData) {
+                        if case .activity = events.last?.kind { events.removeLast() }
+                        events.append(TaskExecutionEvent(
+                            id: source.id, threadID: source.id, title: source.title,
+                            projectName: source.projectName, startedAt: activityAt,
+                            kind: .activity(activityAt)
+                        ))
+                    } else {
+                        hasUnstampedData = true
+                    }
                     lineStart = cursor.remainder.index(after: newline)
+                    searchStart = lineStart
                 }
                 if lineStart > cursor.remainder.startIndex {
                     cursor.remainder = Data(cursor.remainder[lineStart...])
                 }
-                if cursor.remainder.count > 8 * 1024 * 1024 {
+                let prefix = cursor.remainder.prefix(4096)
+                if cursor.discardingLine || (cursor.remainder.count > 4096 && Self.canDiscardLongRecord(prefix))
+                    || cursor.remainder.count > 8 * 1024 * 1024 {
+                    // Ordinary long output need not be assembled in memory. Keep
+                    // its timestamp, then skip through its newline across reads.
+                    if !cursor.discardingLine, let activityAt = Self.activityTimestamp(in: prefix) {
+                        if case .activity = events.last?.kind { events.removeLast() }
+                        events.append(TaskExecutionEvent(
+                            id: source.id, threadID: source.id, title: source.title,
+                            projectName: source.projectName, startedAt: activityAt,
+                            kind: .activity(activityAt)
+                        ))
+                    }
+                    cursor.discardingLine = true
                     cursor.remainder.removeAll(keepingCapacity: false)
                 }
                 return true
             }) {}
+            guard !Task.isCancelled else { return [] }
+            // Every live append counts, even replayed timestamps or partial writes.
+            // Cold replay uses envelope times, with historical file time only when
+            // a partial/malformed record cannot supply its timestamp.
+            if startingOffset > 0 || !cursor.remainder.isEmpty || cursor.discardingLine || hasUnstampedData,
+               let activityAt = attributes[.modificationDate] as? Date {
+                events.append(TaskExecutionEvent(
+                    id: source.id, threadID: source.id, title: source.title,
+                    projectName: source.projectName, startedAt: activityAt,
+                    kind: .activity(activityAt)
+                ))
+            }
             cursors[source.path] = cursor
             if cursor.offset - startingOffset >= 16 * 1024 * 1024 {
                 malloc_zone_pressure_relief(nil, 0)
@@ -198,11 +253,22 @@ actor TaskMonitor {
         pendingUserMessages: inout [String: String]
     ) {
         switch event.kind {
+        case .activity(let activityAt):
+            guard let id = executions.values
+                .filter({ $0.threadID == event.threadID && $0.status == .running && $0.startedAt <= activityAt })
+                .max(by: { $0.startedAt < $1.startedAt })?.id else { return }
+            let previous = executions[id]?.lastActivityAt ?? .distantPast
+            executions[id]?.lastActivityAt = max(previous, activityAt)
         case .started:
             if let current = executions[event.id], current.completedAt != nil { return }
             let inheritedMessage = executions.values
                 .filter { $0.threadID == event.threadID && !$0.latestUserMessage.isEmpty }
                 .max(by: { $0.startedAt < $1.startedAt })?.latestUserMessage ?? ""
+            for (id, task) in executions where task.threadID == event.threadID
+                && id != event.id && task.status == .running && task.startedAt <= event.startedAt {
+                executions[id]?.completedAt = task.lastActivityAt ?? task.startedAt
+                executions[id]?.terminalStatus = .paused
+            }
             executions[event.id] = TaskExecution(
                 id: event.id,
                 threadID: event.threadID,
@@ -212,7 +278,8 @@ actor TaskMonitor {
                     ?? inheritedMessage,
                 startedAt: event.startedAt,
                 completedAt: nil,
-                terminalStatus: nil
+                terminalStatus: nil,
+                lastActivityAt: event.startedAt
             )
         case .completed(let completedAt):
             let current = executions[event.id]
@@ -222,7 +289,7 @@ actor TaskMonitor {
                 title: event.title,
                 projectName: current?.projectName ?? event.projectName,
                 latestUserMessage: current?.latestUserMessage ?? "",
-                startedAt: event.startedAt,
+                startedAt: current?.startedAt ?? event.startedAt,
                 completedAt: completedAt,
                 terminalStatus: nil
             )
@@ -234,13 +301,13 @@ actor TaskMonitor {
                 title: event.title,
                 projectName: current?.projectName ?? event.projectName,
                 latestUserMessage: current?.latestUserMessage ?? "",
-                startedAt: event.startedAt,
+                startedAt: current?.startedAt ?? event.startedAt,
                 completedAt: abortedAt,
-                terminalStatus: .terminated
+                terminalStatus: .paused
             )
         case .goalPaused(let pausedAt):
             guard let taskID = executions.values
-                .filter({ $0.threadID == event.threadID && ($0.status == .terminated || $0.status == .running) })
+                .filter({ $0.threadID == event.threadID && ($0.status == .paused || $0.status == .running) })
                 .max(by: { $0.startedAt < $1.startedAt })?.id else { return }
             executions[taskID]?.completedAt = pausedAt
             executions[taskID]?.terminalStatus = .paused
@@ -329,6 +396,50 @@ actor TaskMonitor {
         }
     }
 
+    /// Only discard recognized non-task envelopes. Unknown formats retain the
+    /// existing bounded-line fallback rather than risking a missed user event.
+    private nonisolated static func canDiscardLongRecord(_ prefix: Data.SubSequence) -> Bool {
+        func value(after marker: String) -> String? {
+            guard let range = prefix.range(of: Data(marker.utf8)),
+                  let end = prefix[range.upperBound...].firstIndex(of: 0x22) else { return nil }
+            return String(decoding: prefix[range.upperBound..<end], as: UTF8.self)
+        }
+        switch value(after: #""type":""#) {
+        case "turn_context", "session_meta": return true
+        case "response_item":
+            switch value(after: #""payload":{"type":""#) {
+            case "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output", "reasoning":
+                return true
+            case "message":
+                return ["assistant", "developer", "system"].contains(value(after: #""role":""#) ?? "")
+            default: return false
+            }
+        case "event_msg":
+            return ["token_count", "item_completed", "agent_message", "agent_reasoning", "thread_settings_applied"]
+                .contains(value(after: #""payload":{"type":""#) ?? "")
+        default: return false
+        }
+    }
+
+    /// Scan only bytes appended since the previous incomplete-line search.
+    /// memchr avoids per-byte Data indexing and quadratic rescans of long output.
+    private nonisolated static func newline(in data: Data, from start: Int) -> Int? {
+        guard start < data.endIndex else { return nil }
+        return data.withUnsafeBytes { bytes in
+            guard let base = bytes.baseAddress,
+                  let found = memchr(base.advanced(by: start - data.startIndex), 0x0A, data.endIndex - start) else { return nil }
+            return data.startIndex + base.distance(to: found)
+        }
+    }
+
+    nonisolated static func activityTimestamp(in data: Data.SubSequence) -> Date? {
+        let prefix = data.prefix(128)
+        let marker = Data(#""timestamp":""#.utf8)
+        guard let range = prefix.range(of: marker),
+              let end = prefix[range.upperBound...].firstIndex(of: 0x22) else { return nil }
+        return UsageScanner.date(String(decoding: prefix[range.upperBound..<end], as: UTF8.self))
+    }
+
     private nonisolated static func parseResponseUserMessage(
         _ root: [String: Any],
         threadID: String,
@@ -385,9 +496,19 @@ actor TaskMonitor {
         _ executions: [String: TaskExecution],
         now: Date
     ) -> [TaskExecution] {
-        sortedForDisplay(executions.values.filter { task in
-            guard let completedAt = task.completedAt else { return true }
-            return now.timeIntervalSince(completedAt) <= TaskExecution.completedVisibilityDuration
+        sortedForDisplay(executions.values.compactMap { stored -> TaskExecution? in
+            var task = stored
+            if task.tool == .codex, task.status == .running, let activityAt = task.lastActivityAt,
+               now.timeIntervalSince(activityAt) >= runningStaleInterval {
+                task.completedAt = activityAt
+                task.terminalStatus = .paused
+            }
+            guard let completedAt = task.completedAt else { return task }
+            let age = now.timeIntervalSince(completedAt)
+            let isVisible = task.status == .paused
+                ? age < TaskExecution.completedVisibilityDuration
+                : age <= TaskExecution.completedVisibilityDuration
+            return isVisible ? task : nil
         })
     }
 

@@ -695,6 +695,7 @@ final class DockPanelResizeController {
     private let sideTogglePresentation: PresentationProvider
     private let verticalSwapPresentation: OptionalPresentationProvider
     private let taskTextAlignmentPresentation: OptionalPresentationProvider
+    private let taskVisibilityPresentation: OptionalPresentationProvider
     private let weeklyLimitTogglePresentation: OptionalPresentationProvider
     private let usageLegendItems: LegendProvider
     private let language: LanguageProvider
@@ -702,6 +703,7 @@ final class DockPanelResizeController {
     private let onToggleSide: ActionHandler
     private let onToggleVerticalOrder: ActionHandler
     private let onToggleTaskTextAlignment: ActionHandler
+    private let onToggleTaskVisibility: ActionHandler
     private let onToggleWeeklyLimitVisibility: ActionHandler
     private let onManagePermissions: ActionHandler
     private let onCustomizeBarColors: ActionHandler
@@ -710,6 +712,7 @@ final class DockPanelResizeController {
     private let onDragEnded: DragHandler
     private var interactionPanels: [DockPanelIdentity: NSPanel] = [:]
     private var interactionViews: [DockPanelIdentity: DockPanelInteractionView] = [:]
+    private var disabledPanels: Set<DockPanelIdentity> = []
     private var metrics: DockPanelOverlayMetrics?
     private var hoverTimer: Timer?
     private var pointerDwell = DockPanelPointerDwell()
@@ -728,6 +731,7 @@ final class DockPanelResizeController {
         sideTogglePresentation: @escaping PresentationProvider,
         verticalSwapPresentation: @escaping OptionalPresentationProvider,
         taskTextAlignmentPresentation: @escaping OptionalPresentationProvider,
+        taskVisibilityPresentation: @escaping OptionalPresentationProvider,
         weeklyLimitTogglePresentation: @escaping OptionalPresentationProvider,
         usageLegendItems: @escaping LegendProvider,
         language: @escaping LanguageProvider,
@@ -735,6 +739,7 @@ final class DockPanelResizeController {
         onToggleSide: @escaping ActionHandler,
         onToggleVerticalOrder: @escaping ActionHandler,
         onToggleTaskTextAlignment: @escaping ActionHandler,
+        onToggleTaskVisibility: @escaping ActionHandler,
         onToggleWeeklyLimitVisibility: @escaping ActionHandler,
         onManagePermissions: @escaping ActionHandler,
         onCustomizeBarColors: @escaping ActionHandler,
@@ -747,6 +752,7 @@ final class DockPanelResizeController {
         self.sideTogglePresentation = sideTogglePresentation
         self.verticalSwapPresentation = verticalSwapPresentation
         self.taskTextAlignmentPresentation = taskTextAlignmentPresentation
+        self.taskVisibilityPresentation = taskVisibilityPresentation
         self.weeklyLimitTogglePresentation = weeklyLimitTogglePresentation
         self.usageLegendItems = usageLegendItems
         self.language = language
@@ -754,6 +760,7 @@ final class DockPanelResizeController {
         self.onToggleSide = onToggleSide
         self.onToggleVerticalOrder = onToggleVerticalOrder
         self.onToggleTaskTextAlignment = onToggleTaskTextAlignment
+        self.onToggleTaskVisibility = onToggleTaskVisibility
         self.onToggleWeeklyLimitVisibility = onToggleWeeklyLimitVisibility
         self.onManagePermissions = onManagePermissions
         self.onCustomizeBarColors = onCustomizeBarColors
@@ -770,6 +777,30 @@ final class DockPanelResizeController {
 
     isolated deinit {
         hoverTimer?.invalidate()
+    }
+
+    func setPanelEnabled(_ enabled: Bool, for identity: DockPanelIdentity) {
+        if enabled {
+            disabledPanels.remove(identity)
+            if interactionPanels[identity] == nil {
+                let view = makeInteractionView(for: identity)
+                interactionViews[identity] = view
+                interactionPanels[identity] = makeOverlayPanel(contentView: view)
+            }
+        } else {
+            disabledPanels.insert(identity)
+            if visibleHandle == identity { hideHandleImmediately() }
+            if draggingHandle == identity { draggingHandle = nil }
+            resizeFocusTransitionGeneration += 1
+            resizeFocusTransitioningHandle = nil
+            pointerDwell = DockPanelPointerDwell()
+            if let panel = interactionPanels.removeValue(forKey: identity) {
+                panel.contentView = nil
+                panel.close()
+            }
+            interactionViews.removeValue(forKey: identity)
+        }
+        refreshVisibleOverlay()
     }
 
     func startMonitoring() {
@@ -842,6 +873,12 @@ final class DockPanelResizeController {
                 cancelPendingHide()
                 onToggleTaskTextAlignment(identity)
                 updateOverlays(identity)
+            },
+            onToggleTaskVisibility: { [weak self] in
+                guard let self else { return }
+                cancelPendingHide()
+                onToggleTaskVisibility(identity)
+                refreshVisibleOverlay()
             },
             onToggleWeeklyLimitVisibility: { [weak self] in
                 guard let self else { return }
@@ -921,7 +958,7 @@ final class DockPanelResizeController {
             return
         }
 
-        let candidate = DockPanelIdentity.allCases.first(where: { panelFrame($0).contains(cursor) })
+        let candidate = DockPanelIdentity.allCases.first(where: { !disabledPanels.contains($0) && panelFrame($0).contains(cursor) })
         guard let readyCandidate = pointerDwell.update(
             candidate: candidate,
             location: cursor,
@@ -958,6 +995,7 @@ final class DockPanelResizeController {
     }
 
     private func showHandle(_ identity: DockPanelIdentity) {
+        guard !disabledPanels.contains(identity) else { return }
         let isNewlyVisible = visibleHandle != identity
         if isNewlyVisible {
             hideHandleImmediately()
@@ -1032,6 +1070,7 @@ final class DockPanelResizeController {
     }
 
     private func updateOverlays(_ identity: DockPanelIdentity, animated: Bool = false) {
+        guard !disabledPanels.contains(identity) else { return }
         let verticalPresentation = verticalSwapPresentation(identity)
         let updateView = { [self] (completion: (@MainActor @Sendable () -> Void)?) in
             interactionViews[identity]?.update(
@@ -1039,6 +1078,7 @@ final class DockPanelResizeController {
                 sideToggle: sideTogglePresentation(identity),
                 verticalSwap: verticalPresentation,
                 taskTextAlignment: taskTextAlignmentPresentation(identity),
+                taskVisibility: taskVisibilityPresentation(identity),
                 weeklyLimitToggle: weeklyLimitTogglePresentation(identity),
                 legendItems: usageLegendItems(identity),
                 language: language(),
@@ -1159,6 +1199,7 @@ private final class DockPanelInteractionView: NSView {
     private let sideSurface = NSGlassEffectView()
     private let verticalSurface = NSGlassEffectView()
     private let taskTextAlignmentSurface = NSGlassEffectView()
+    private let taskVisibilitySurface = NSGlassEffectView()
     private let weeklyLimitSurface = NSGlassEffectView()
     private let languageButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let permissionButton = NSButton(image: NSImage(), target: nil, action: nil)
@@ -1166,6 +1207,8 @@ private final class DockPanelInteractionView: NSView {
     private let sideButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let verticalButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let taskTextAlignmentButton = NSButton(image: NSImage(), target: nil, action: nil)
+    private let taskVisibilityButton = NSButton(image: NSImage(), target: nil, action: nil)
+    private var taskVisibility: PanelMovementPresentation?
     private let weeklyLimitButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let legendView = DockPanelUsageLegendView()
     private let languagePicker: DockPanelLanguagePickerView
@@ -1173,6 +1216,7 @@ private final class DockPanelInteractionView: NSView {
     private let onToggleSide: () -> Void
     private let onToggleVerticalOrder: () -> Void
     private let onToggleTaskTextAlignment: () -> Void
+    private let onToggleTaskVisibility: () -> Void
     private let onToggleWeeklyLimitVisibility: () -> Void
     private let onManagePermissions: () -> Void
     private let onCustomizeBarColors: () -> Void
@@ -1188,6 +1232,7 @@ private final class DockPanelInteractionView: NSView {
             + (permissionButton.isHidden ? 0 : 1)
             + (barColorButton.isHidden ? 0 : 1)
             + (weeklyLimitButton.isHidden ? 0 : 1)
+            + (taskVisibilityButton.isHidden ? 0 : 1)
     }
 
     var isLegendVisible: Bool { !legendView.isHidden }
@@ -1202,6 +1247,7 @@ private final class DockPanelInteractionView: NSView {
         onToggleSide: @escaping () -> Void,
         onToggleVerticalOrder: @escaping () -> Void,
         onToggleTaskTextAlignment: @escaping () -> Void,
+        onToggleTaskVisibility: @escaping () -> Void,
         onToggleWeeklyLimitVisibility: @escaping () -> Void,
         onManagePermissions: @escaping () -> Void,
         onCustomizeBarColors: @escaping () -> Void,
@@ -1212,6 +1258,7 @@ private final class DockPanelInteractionView: NSView {
         self.onToggleSide = onToggleSide
         self.onToggleVerticalOrder = onToggleVerticalOrder
         self.onToggleTaskTextAlignment = onToggleTaskTextAlignment
+        self.onToggleTaskVisibility = onToggleTaskVisibility
         self.onToggleWeeklyLimitVisibility = onToggleWeeklyLimitVisibility
         self.onManagePermissions = onManagePermissions
         self.onCustomizeBarColors = onCustomizeBarColors
@@ -1247,6 +1294,7 @@ private final class DockPanelInteractionView: NSView {
             button: weeklyLimitButton,
             action: #selector(toggleWeeklyLimitVisibility)
         )
+        configure(taskVisibilitySurface, button: taskVisibilityButton, action: #selector(toggleTaskVisibility))
         languagePickerSurface.style = .regular
         configureContinuousCorners(languagePickerSurface, radius: DockPanelOverlayGeometry.actionCornerRadius)
         let pickerContent = NSView()
@@ -1260,6 +1308,7 @@ private final class DockPanelInteractionView: NSView {
         actionsView.addSubview(verticalSurface)
         actionsView.addSubview(taskTextAlignmentSurface)
         actionsView.addSubview(weeklyLimitSurface)
+        actionsView.addSubview(taskVisibilitySurface)
         legendView.isHidden = true
         actionsView.addSubview(legendView)
         addSubview(backgroundGlass)
@@ -1320,6 +1369,11 @@ private final class DockPanelInteractionView: NSView {
             taskTextAlignmentButton.frame = taskTextAlignmentSurface.bounds
             index += 1
         }
+        if !taskVisibilityButton.isHidden, frames.count > index {
+            taskVisibilitySurface.frame = frames[index]
+            taskVisibilityButton.frame = taskVisibilitySurface.bounds
+            index += 1
+        }
         sideSurface.frame = frames[index]
         sideButton.frame = sideSurface.bounds
         index += 1
@@ -1334,6 +1388,7 @@ private final class DockPanelInteractionView: NSView {
         sideToggle: PanelMovementPresentation,
         verticalSwap: PanelMovementPresentation?,
         taskTextAlignment: PanelMovementPresentation?,
+        taskVisibility: PanelMovementPresentation?,
         weeklyLimitToggle: PanelMovementPresentation?,
         legendItems: [DockPanelUsageLegendItem],
         language: AppLanguage,
@@ -1342,6 +1397,7 @@ private final class DockPanelInteractionView: NSView {
         completion: (@MainActor @Sendable () -> Void)?
     ) {
         self.side = side
+        self.taskVisibility = taskVisibility
         legendView.items = legendItems
         legendView.alignTrailing = side == .right
         legendView.isHidden = legendItems.isEmpty || isLanguagePickerVisible
@@ -1379,6 +1435,9 @@ private final class DockPanelInteractionView: NSView {
         weeklyLimitButton.isHidden = weeklyLimitToggle == nil || isLanguagePickerVisible
         weeklyLimitSurface.isHidden = weeklyLimitButton.isHidden
         if let weeklyLimitToggle { apply(weeklyLimitToggle, to: weeklyLimitButton) }
+        taskVisibilityButton.isHidden = taskVisibility == nil || isLanguagePickerVisible
+        taskVisibilitySurface.isHidden = taskVisibilityButton.isHidden
+        if let taskVisibility { apply(taskVisibility, to: taskVisibilityButton) }
         sideSurface.isHidden = isLanguagePickerVisible
         sideButton.isHidden = isLanguagePickerVisible
         apply(sideToggle, to: sideButton)
@@ -1499,6 +1558,7 @@ private final class DockPanelInteractionView: NSView {
     @objc private func toggleSide() { onToggleSide() }
     @objc private func toggleVerticalOrder() { onToggleVerticalOrder() }
     @objc private func toggleTaskTextAlignment() { onToggleTaskTextAlignment() }
+    @objc private func toggleTaskVisibility() { onToggleTaskVisibility() }
     @objc private func toggleWeeklyLimitVisibility() { onToggleWeeklyLimitVisibility() }
     @objc private func managePermissions() { onManagePermissions() }
     @objc private func customizeBarColors() { onCustomizeBarColors() }
@@ -1506,6 +1566,8 @@ private final class DockPanelInteractionView: NSView {
     @objc private func showLanguagePicker() {
         guard identity == .usageOverview else { return }
         isLanguagePickerVisible = true
+        taskVisibilitySurface.isHidden = true
+        taskVisibilityButton.isHidden = true
         languageSurface.isHidden = true
         permissionSurface.isHidden = true
         permissionButton.isHidden = true
@@ -1524,6 +1586,8 @@ private final class DockPanelInteractionView: NSView {
         guard isLanguagePickerVisible else { return }
         isLanguagePickerVisible = false
         languagePickerSurface.isHidden = true
+        taskVisibilityButton.isHidden = taskVisibility == nil
+        taskVisibilitySurface.isHidden = taskVisibilityButton.isHidden
         languageSurface.isHidden = identity != .usageOverview
         permissionButton.isHidden = identity != .usageOverview
         permissionSurface.isHidden = permissionButton.isHidden

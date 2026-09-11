@@ -48,6 +48,11 @@ actor OpenCodeTaskMonitor {
     }
 
     func scan(now: Date = Date()) -> [TaskExecution] {
+        autoreleasepool { scanContents(now: now) }
+    }
+
+    private func scanContents(now: Date) -> [TaskExecution] {
+        guard !Task.isCancelled else { return [] }
         let url = home.appending(path: ".local/share/opencode/opencode.db")
         guard let databaseState = fileState(at: url) else {
             cache = nil
@@ -94,6 +99,7 @@ actor OpenCodeTaskMonitor {
         var executions: [String: TaskExecution] = [:]
         var activity: [String: Date] = [:]
         for session in querySessions(db) {
+            guard !Task.isCancelled else { return ([:], [:]) }
             guard now.timeIntervalSince(session.updated) <= Self.sourceFreshnessInterval else { continue }
             let threadID = Self.threadID(session.id)
             activity[threadID] = session.updated
@@ -136,7 +142,7 @@ actor OpenCodeTaskMonitor {
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
         defer { sqlite3_finalize(statement) }
         var result: [SessionRow] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        while !Task.isCancelled, sqlite3_step(statement) == SQLITE_ROW {
             guard let id = sqlite3_column_text(statement, 0),
                   let title = sqlite3_column_text(statement, 1),
                   let directory = sqlite3_column_text(statement, 2) else { continue }
@@ -162,7 +168,7 @@ actor OpenCodeTaskMonitor {
         defer { sqlite3_finalize(statement) }
         sqlite3_bind_text(statement, 1, sessionID, -1, Self.transientDestructor)
         var rows: [MessageRow] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        while !Task.isCancelled, sqlite3_step(statement) == SQLITE_ROW {
             autoreleasepool {
                 guard let id = sqlite3_column_text(statement, 0),
                       let json = sqlite3_column_text(statement, 1),
@@ -182,7 +188,7 @@ actor OpenCodeTaskMonitor {
         defer { sqlite3_finalize(statement) }
         sqlite3_bind_text(statement, 1, messageID, -1, Self.transientDestructor)
         var texts: [String] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        while !Task.isCancelled, sqlite3_step(statement) == SQLITE_ROW {
             autoreleasepool {
                 guard let json = sqlite3_column_text(statement, 0),
                       let data = String(cString: json).data(using: .utf8),
