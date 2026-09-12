@@ -1,49 +1,14 @@
 # AGENTS.md
 
-## Project overview
-
-Codex Pulse is a Swift Package Manager macOS 26+ accessory app. It renders two nonactivating SwiftUI panels beside the Dock and reads local Codex, Claude Code, and OpenCode usage data. The Usage Overview Panel shows a tool only while it has usage inside the visible 14-day window, so uninstalled or dormant tools stay hidden without any setting. It does not send usage data over the network. Only non-Debug `.app` bundles configure launch at login; Debug and raw-executable runs leave startup state untouched.
+These instructions add project-specific constraints to the inherited global rules. See [README.md](README.md) for project orientation, [development commands](README.md#develop-and-verify), and [code navigation](README.md#code-navigation).
 
 ## Panel terminology
 
-- **Usage Overview Panel** (`用量概览面板`): the functionally named panel that shows the 14-day token-usage trend and Codex weekly limit. It is on the left when the Dock is at the bottom and above the other panel when the Dock is vertical.
-- **Task Activity Panel** (`任务活动面板`): the functionally named panel that shows active and recently completed Codex, Claude Code, and OpenCode tasks grouped by project and session. It is on the right when the Dock is at the bottom and below the other panel when the Dock is vertical.
+Use **Usage Overview Panel** (`用量概览面板`) and **Task Activity Panel** (`任务活动面板`) in documentation, requirements, code review, and new symbol names; their responsibilities are defined in [Use the panels](README.md#use-the-panels). Use “left/right panel” or “upper/lower panel” only for physical placement, since panel identity does not change with Dock orientation or user arrangement. Existing `leftPanel` and `rightPanel` symbols are positional legacy names for the Usage Overview Panel and Task Activity Panel, respectively.
 
-Use these canonical names in documentation, requirements, code review, and new symbol names. Use “left/right panel” or “upper/lower panel” only when discussing physical placement; panel identity does not change with Dock orientation. Existing `leftPanel` and `rightPanel` symbols are positional legacy names for the Usage Overview Panel and Task Activity Panel, respectively.
+## Required verification
 
-## Build and test
-
-- Run: `swift run "Codex Pulse"`
-- Test: `swift test`
-- Package tools version: Swift 6.2
-- System dependency: SQLite 3 through the `CSQLite` system-library target
-
-Run the full test suite after changing panel text rendering, wallpaper sampling or cache invalidation, refresh suspension, panel placement or window levels, interaction geometry, parsing, models, task state, launch-at-login behavior, or app lifecycle code.
-
-## Source map
-
-- `Sources/CodexPulse/App.swift`: app lifecycle, Dock panel placement and visibility, and SwiftUI views.
-- `Sources/CodexPulse/CodexSessionLink.swift`: session-title overlay windows and their matching adaptive-foreground shadow rendering; Codex titles deep-link into ChatGPT, other tools' titles render as click-through text.
-- `Sources/CodexPulse/DockPanelResizing.swift`: panel arrangement and persistence, placement geometry, window levels, pointer dwell, resizing, and interaction controls.
-- `Sources/CodexPulse/UsageModel.swift`: observable usage/task state, persisted task visibility, cancellation and generation checks.
-- `Sources/CodexPulse/TaskMonitoringSession.swift`: task-only monitor ownership for one visible-panel lifetime.
-- `Sources/CodexPulse/RefreshActivityGate.swift`: composable refresh suspension for inactive sessions and sleeping displays.
-- `Sources/CodexPulse/UsageScanner.swift`: read-only 14-day Claude Code, Codex, and OpenCode usage scanning with in-memory incremental cursors; it creates no derived on-disk cache.
-- `Sources/CodexPulse/TaskMonitor.swift`: Codex task-event parsing, visible-task selection, and the shared display order for merged per-tool task lists.
-- `Sources/CodexPulse/ClaudeTaskMonitor.swift`: Claude Code turn inference from session transcripts (prompt starts a turn, non-`tool_use` stop reason ends it, interrupt markers abort it, transcript growth counts as activity).
-- `Sources/CodexPulse/OpenCodeTaskMonitor.swift`: OpenCode turn inference from its SQLite database (user message plus `parentID`-linked assistant messages; `finish` and completion times decide the state).
-- `Sources/CodexPulse/TaskExecutionLayout.swift`: shared task grouping, visible-row selection, and dynamic panel-height planning.
-- `Sources/CodexPulse/Models.swift`: usage, rate-window, daily-usage, task, snapshot, and pricing models.
-- `Sources/CodexPulse/ToolBarColorSettings.swift`: per-tool usage-bar color overrides — hex persistence, resolution against the built-in adaptive colors, and the floating color-settings window opened from the Usage Overview Panel control group.
-- `Sources/CodexPulse/LaunchAtLoginManager.swift`: login startup eligibility and `SMAppService` registration for release app bundles.
-- `Sources/CodexPulse/WallpaperAppearance.swift`: wallpaper geometry, candidate sampling, Store directory monitoring, semantic appearance selection, refresh tracking, and decoded-asset caching.
-- `Sources/CodexPulse/WallpaperSourceResolver.swift`: typed local wallpaper-source resolution from Store selections, including solid, file-backed, video, Aerial, supported dynamic, and unavailable sources.
-- `Tests/CodexPulseTests/DockPanelWidthGeometryTests.swift`: panel arrangement, placement, overlay geometry, dwell timing, and window-level regression tests.
-- `Tests/CodexPulseTests/LaunchAtLoginManagerTests.swift`: launch-at-login eligibility regression tests.
-- `Tests/CodexPulseTests/ParserTests.swift`: parser and behavior regression tests.
-- `Tests/CodexPulseTests/RefreshActivityGateTests.swift`: multi-reason refresh suspension and task-animation pause regression tests.
-- `Tests/CodexPulseTests/ToolBarColorTests.swift`: bar-color hex serialization, persistence, and override-resolution regression tests.
-- `Tests/CodexPulseTests/WallpaperAppearanceTests.swift`: wallpaper mapping, appearance selection, refresh tracking, and decoded-orientation regression tests.
+Run the full test suite from the repository root with `swift test` after changing panel text rendering, wallpaper sampling or cache invalidation, refresh suspension, panel placement or window levels, interaction geometry, parsing, models, task state, launch-at-login behavior, or app lifecycle code.
 
 ## Implementation constraints
 
@@ -59,7 +24,7 @@ Run the full test suite after changing panel text rendering, wallpaper sampling 
 - Preserve per-file Claude caches and complete-line Codex byte cursors in memory. After Codex cold aggregation, release every per-event candidate and retain only the 14-day summary, window-scoped deduplication fingerprints, rate limits, and each active file's byte offset, continuity hash, and single cumulative parser baseline. Unchanged files must be zero-read and continuous appends must parse only the suffix after the last complete line. Crossing a day boundary, changing the weekly quota window, or detecting removal, truncation, or replacement may rebuild Codex's bounded 14-day summary instead of retaining rollback-ready event history. Cold Codex files that start inside the window and end on a complete line use balanced, shell-free parallel batches of the built-in macOS `grep`/`awk` streaming prefilter; keep arguments below platform limits, verify source versions after filtering, and retry files appended during filtering before falling back. Ordinary session content and full turn contexts must not enter the app process. `token_count` rows use the allocation-light narrow byte parser for timestamps, counters, and rate limits rather than Foundation object-tree decoding. Keep transient allocation pressure bounded during realistically large cold scans. Do not restore periodic full-history parsing.
 - OpenCode scan caching must account for the SQLite database and its WAL/SHM companions so read-only caching never hides new writes. Restrict cold queries to the 14-day window and, when the source provides `message_session_time_created_id_idx`, scan that covering index for recent candidate IDs before point-reading changed rows; retain the compatible full-query fallback for older schemas. After a source-version change, decode only rows whose IDs are new or whose `time_updated` changed; remove deleted or expired rows from memory.
 - Codex silence pauses are derived at display time after 3 minutes with no log activity and expire 10 minutes after last activity. Count tool output, usage events, and partial writes without decoding full ordinary output objects. Cold replay must use historical activity timestamps. Search new bytes for line endings with the bounded streaming cursor; recognized long non-task envelopes may be discarded through their next newline while preserving activity. Unknown formats keep the bounded fallback. Manual interruptions show paused; only silence-inferred pauses resume on ordinary log activity. A new turn closes older unfinished turns in the same thread without resetting their retention clock.
-- Hidden Task Activity Panel state is persisted before monitoring starts. Hide cancels and invalidates the task loop, releases `TaskMonitoringSession` and all task-only caches after cooperative cancellation, clears the observable task array, and removes task content, links, controls, and wallpaper regions. Usage scanning remains independent. Never publish a stale scan after hide/show or suspension. See the lifecycle diagram in README.md.
+- Hidden Task Activity Panel state is persisted before monitoring starts. Hide cancels and invalidates the task loop, releases `TaskMonitoringSession` and all task-only caches after cooperative cancellation, clears the observable task array, and removes task content, links, controls, and wallpaper regions. Usage scanning remains independent. Never publish a stale scan after hide/show or suspension. See the [task lifecycle diagram](README.md#hide-and-restore-task-activity).
 - Verify task visibility changes with lifecycle tests for hidden startup, in-flight cancellation, rapid toggles, weak-reference release, and wake/activation ordering. Run the full suite; use local real-data physical-footprint observations for memory changes and distinguish object release from reclaimable allocator pages. UI validation must check hide/restore controls and hidden-region hit targets.
 - Keep task-event monitoring incremental from the last byte offset. Bound incomplete-line buffers and discard cursors and pending state for threads that leave the monitored set.
 - The Task Activity Panel merges tasks from all three tools through `TaskMonitor.sortedForDisplay`. A Codex Goal-only automatic continuation has no displayable user event because its injected internal context stays hidden; inherit the same session's latest real user message until an inserted conversation replaces it, so the task row never falls back to a dash. Claude Code and OpenCode have no explicit task events: their turn boundaries are inferred from local session records, and a running turn whose session shows no activity past the monitor's stale interval (slightly above the ten-minute Bash tool-call ceiling) is dropped. For Claude Code, transcript byte growth counts as activity even when the appended lines parse to no events — do not judge liveness by parsed events alone.
@@ -98,4 +63,4 @@ Run the full test suite after changing panel text rendering, wallpaper sampling 
 
 ## Documentation
 
-Update `README.md` when user-visible behavior, requirements, supported data sources, run commands, or startup behavior changes. Update this file when architecture, invariants, or contributor workflows change.
+Update affected README guidance when user-visible behavior, requirements, supported data sources, run commands, or startup behavior changes. Keep this file limited to durable project-specific constraints and verification requirements; update it when those requirements change. Use README links for ordinary implementation and usage details.

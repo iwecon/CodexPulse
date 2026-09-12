@@ -9,149 +9,135 @@
   <a href="README.ko.md">한국어</a>
 </p>
 
-Codex Pulse 是一个使用 SwiftUI 与 AppKit 构建的 macOS 桌面配件，通过 Dock 两侧的**用量概览面板**和**任务活动面板**展示本机 Codex、Claude Code 与 OpenCode 的 Token 用量、Codex 周额度和最近任务状态。所有数据均从本机读取，不上传。
+Codex Pulse 是一款 macOS 26+ 桌面辅助应用，在 Dock 旁显示本机 Codex、Claude Code 和 OpenCode 的用量与任务活动。它使用 SwiftUI 和 AppKit 构建，读取本地记录，不上传用量数据，也不修改原始记录。
 
 <p align="center">
   <a href="https://iwecon.github.io/CodexPulse/">
-    <img src="docs/assets/codex-pulse-preview.jpg" alt="Codex Pulse 产品预览：用量概览面板与任务活动面板贴在 macOS Dock 两侧" width="1200">
+    <img src="docs/assets/codex-pulse-preview.jpg" alt="Codex Pulse 用量与任务面板位于 macOS Dock 旁" width="1200">
   </a>
 </p>
 
-<p align="center">
-  <a href="https://iwecon.github.io/CodexPulse/">产品落地页</a>
-  ·
-  <a href="https://github.com/iwecon/CodexPulse/releases/latest">下载最新版</a>
-  ·
-  <a href="https://github.com/iwecon/CodexPulse">查看源码</a>
-</p>
-
-产品落地页在桌面浏览器中提供可交互的 macOS 桌面演示，包括主题菜单、可拖动窗口、Activity Monitor 动态指标、与应用一致的 Dock 面板操作控件，以及适配明暗主题的真实系统应用图标；760px 及以下继续使用移动端纵向页面。
+[产品页面与交互式演示](https://iwecon.github.io/CodexPulse/) · [下载发行版](https://github.com/iwecon/CodexPulse/releases/latest)
 
 ## 安装
 
-需要 macOS 26 或更高版本。GitHub Actions 会为 Apple 芯片（arm64）和 Intel 芯片（x86_64）分别构建 DMG，并随版本发布到 [GitHub Releases](https://github.com/iwecon/CodexPulse/releases/latest)。
+在 macOS 26 或更高版本上，从 Releases 下载适用于你的 Mac 的 DMG：Apple 芯片使用 `Codex-Pulse-arm64.dmg`，Intel 使用 `Codex-Pulse-x86_64.dmg`。打开后将 `Codex Pulse.app` 复制到“应用程序”文件夹。
 
-### AI 辅助安装
-
-将以下提示词原样交给你的编程助手：
-
-```text
-From https://iwecon.github.io/CodexPulse/ to Install CodexPulse. Try Homebrew first, then npm, and finally download and install via the GitHub Release Page.
-```
-
-### Homebrew
-
-当前仓库同时作为自定义 Tap 使用：
+安装 Homebrew 后，也可以使用此仓库的 tap：
 
 ```bash
 brew tap iwecon/codex-pulse https://github.com/iwecon/CodexPulse
 brew install --cask iwecon/codex-pulse/codex-pulse
 ```
 
-### npm
-
-npm 包提供一个显式安装 CLI，不会在 `npm install` 阶段静默挂载 DMG 或修改应用目录：
+另一个安装方式需要 Node.js 18+ 和 npm：
 
 ```bash
 npm install -g github:iwecon/CodexPulse
 codex-pulse install
+codex-pulse open
 ```
 
-应用默认安装到 `~/Applications/Codex Pulse.app`。再次安装时可使用 `codex-pulse install --force`，安装后可运行 `codex-pulse open`。
+npm 命令可从任意目录运行。单独安装 CLI 不会安装应用；`codex-pulse install` 会下载并挂载发行版 DMG，再将应用复制到 `~/Applications/Codex Pulse.app`。添加 `--force` 可替换现有安装。支持的命令请参阅[安装程序 CLI](npm/bin/codex-pulse.js)。
 
-仓库配置 npm 发布凭据后，也可以使用注册表短命令 `npm install -g @iwecon/codex-pulse`。
+## 使用面板
 
-### 签名说明
+应用不显示 Dock 图标。透明面板位于桌面图标之上、普通应用窗口之下，会跟随 Dock 位于底部、左侧或右侧的布局，并支持多个 Space。
 
-当前公开构建使用临时签名，尚未使用 Apple Developer ID 签名与公证。首次打开下载版时，macOS 可能显示来源确认提示。配置 Developer ID 与公证凭据后，可在发布工作流中升级为完整的签名和公证流程。
+| 面板 | 显示内容 |
+| --- | --- |
+| **用量概览面板**（Usage Overview Panel） | 最近 14 天的 token 趋势和各工具总量，以及可用时的 Codex 周额度。这段时间内没有用量的工具会自动隐藏。 |
+| **任务活动面板**（Task Activity Panel） | 三种工具的当前及最近任务，按项目和会话分组，并显示状态指示和最新用户消息。 |
 
-## 面板术语
+默认情况下，底部 Dock 的左侧显示用量，右侧显示任务；Dock 垂直放置时，用量显示在任务上方。即使你移动面板，这些名称仍表示各自的职责。
 
-- **用量概览面板（Usage Overview Panel）**：Dock 位于屏幕底部时显示在左侧，汇总最近 14 天的 Token 用量趋势和 Codex 周额度。
-- **任务活动面板（Task Activity Panel）**：Dock 位于屏幕底部时显示在右侧，按项目和会话展示正在执行及最近完成的 Codex、Claude Code 与 OpenCode 任务。
+将指针在面板内保持静止半秒即可显示控制项。拖动调整大小的边缘或使用按钮，可以移动面板并更改其堆叠顺序。用量概览面板还提供语言选择、各工具用量条颜色、周额度显示以及照片墙纸权限；任务活动面板提供文字对齐和隐藏按钮。偏好设置会保存在本机。界面支持简体中文、香港繁体中文、台湾繁体中文、日语、韩语和英语；首次启动默认使用简体中文。
 
-这两个名称按面板职责定义，是文档、需求和代码讨论中的正式术语。Dock 位于屏幕左侧或右侧时，用量概览面板会移至上方，任务活动面板会移至下方，但名称不随位置改变。
+普通内容支持点击穿透。Codex 会话标题会打开 ChatGPT 中对应的会话；Claude Code 和 OpenCode 标题保持点击穿透。文字会根据各面板下方的墙纸自适应。采样使用本地资源，从不截取屏幕；照片图库墙纸会使用已有访问权限，只有你通过控制项明确请求时才会请求权限。无法使用的墙纸资源会回退到系统外观，不会下载图片。
 
-## 功能
+只有 Codex 提供本地额度快照。剩余额度为 `100 - used_percent`，使用最新的帐户级记录。底行的周 token 总量是估算值：`本周期记录的 token 数 ÷ used_percent × 100`，使用原始已用百分比计算。它不是官方 token 配额，且可能遗漏其他设备或云端会话的活动；输入缺失或无效时保留仅显示已用量的方式。将鼠标悬停在周额度显示/隐藏控件上可查看说明。
 
-- 统计 Codex（`~/.codex`）、Claude Code（`~/.claude/projects`）与 OpenCode（`~/.local/share/opencode`）的 Token 用量。工具在最近 14 天可见窗口内有用量时自动显示；未安装或近 14 天未使用的工具自动隐藏，无需任何设置。
-- 展示最近 14 天的用量趋势。仅一个工具活跃时保持单色趋势，并在今日日期旁显示今日 Token 消耗；多个工具活跃时，每日柱形按工具堆叠固定色相的分段（亮度跟随壁纸自适应文本极性），并以彩点图例显示各工具的 14 天总量。
-- 展示 Codex 周额度（本地额度数据仅 Codex 提供，Codex 近 14 天未使用时隐藏该区块）、剩余比例、重置时间、按剩余时长分级的倒计时（最后一分钟显示秒），以及按精确剩余时间折算的日均可用百分比。
-- 任务活动面板会按当前可见内容动态调整高度，没有高度上限；从底部开始按项目和会话展示所有执行中及最近 10 分钟完成的 Codex、Claude Code 与 OpenCode 任务。Claude Code 与 OpenCode 没有显式任务事件，由本机会话记录推断回合的开始与结束；执行中的回合在会话数据超过 12 分钟无更新后视为已中断并移除。所有执行中的任务始终全部显示，已完成任务在其 10 分钟可见窗口内也全部显示，不会因高度被裁掉。执行中的任务使用带渐变拖尾的旋转圆环指示状态，状态图标（圆环与完成对勾）按会话着色：每个会话从其 ID 派生一个稳定色调，便于一眼区分同时进行的不同会话；新增和移除任务时会使用短暂过渡动画，并遵循系统“减少动态效果”设置；完成超过 3 分钟的任务消息会降低对比度，完成超过 10 分钟后从列表移除；最新用户消息按实际一至两行紧凑显示。
-- 自动跟随 Dock 位于底部、左侧或右侧时调整面板位置。
-- 两个主面板的内容文字、会话标题与项目标题统一使用白字和轻微黑色阴影，不再根据墙纸明暗切换为黑字或绘制多层反色描边；主文字与次要文字仍保留不同亮度层级。面板保持完全透明，不截取屏幕，也不需要“屏幕录制”权限。
-- 两个主面板仍会分别采样各自下方的桌面墙纸区域，为其他语义外观元素选择合适的明暗状态。系统在深色与浅色外观之间切换时会先立即同步面板语义外观，待墙纸完成切换后清除缓存并恢复两个面板各自的区域采样；切换空间、唤醒屏幕或恢复登录会检查墙纸文件与显示选项，仅在状态变化时重新采样，避免长期停留在系统外观兜底状态或进行无效解码。
-- 面板显示在桌面图标之上、普通应用窗口之下，不会覆盖当前活动应用。
-- 指针在任一面板内连续静止停留 0.5 秒后，会在面板内侧缩放边缘显示一个覆盖主面板内容宽度的统一 Liquid Glass 横向控制组；停留期间移动指针会重新计时。两个面板使用相同的淡入动画。所有玻璃表面使用连续圆角；34px 宽度拖动段位于内容内侧：左侧面板的拖动段右边缘与内容右边缘对齐，右侧面板的拖动段左边缘与内容左边缘对齐，并和操作按钮一样响应 6px 外层内边距。旁边的面板操作按钮均分并填满其余操作区域。左侧面板固定左边缘、从右边缘缩放，右侧面板固定右边缘、从左边缘缩放；底部 Dock 较高时交互区会向上延伸，保持足够大的可操作区域。指针离开主面板和当前控制组的联合范围后，控制组会等待 1 秒再淡出，期间返回或正在拖动都保持显示。
-- 指针进入 34px 缩放段时，其他操作按钮会在 0.34 秒内缩放至 0.98 并淡出；外层 Liquid Glass 背景保持完整宽度，仅向内收缩原有的 6px 内边距、把圆角过渡为 10px，并淡出至完全透明。动画结束后交互窗口才收缩到缩放段本身，避免透明区域拦截点击。离开缩放段不会恢复背景和操作按钮，只有指针进入任一操作按钮的实际范围才反向恢复完整控制组；拖动过程中则始终只保留缩放段直到松开指针。
-- 控制组中的左右移动按钮始终存在，可把当前面板切换到另一逻辑侧；切换后按钮会反向显示，随时可移回。两个面板同侧时，控制组另行显示上下交换按钮，用于切换堆叠顺序。底部 Dock 的逻辑侧对应左右，垂直 Dock 对应上方和下方；调整后的位置和两个面板各自的宽度会持久化，并在下次启动时自动恢复，同时根据当前屏幕、Dock 和可用空间自动夹取，避免面板互相覆盖。用量概览面板位于逻辑右侧时，其趋势与周额度布局会同步镜像并靠右对齐。
-- 任务活动面板的控制组提供文字对齐按钮，点击会在自动、左对齐和右对齐之间循环并切换图标，选择会持久化。默认使用自动对齐：面板位于左侧时左对齐，位于右侧时右对齐；右对齐时项目、会话和任务消息靠右排列，持续时间移到状态图标之前。
-- 用量概览面板的控制组提供语言切换按钮；点击后，操作区域会替换为原生 AppKit 纵向滚轮选择器。可点击可见语言项、按住后上下拖动，或通过鼠标滚轮和触控板即时切换。支持中国大陆简体中文、香港繁体中文、台湾繁体中文、日语、韩语和英语；选择会应用到两个面板的界面文字、日期格式及 AppKit 控件的辅助功能标签和工具提示，并仅保存在本机 `UserDefaults` 中。首次启动默认使用中国大陆简体中文。
-- 用量概览面板的控制组还提供配色按钮（调色板图标）；点击打开一个浮动设置窗口，可为每个产品自定义用量条颜色。自定义颜色是固定颜色，在深浅两种面板外观下保持一致，会应用到堆叠趋势分段、两处图例、单产品趋势条以及 Codex 周限额进度条。每个产品都可以单独恢复默认，也可以一键全部恢复默认；选择仅保存在本机 `UserDefaults` 中。
-- 用量概览面板和任务活动面板的普通内容保持点击穿透且不激活应用；任务活动面板中的 Codex 会话标题可点击并在 ChatGPT 中打开对应会话（Claude Code 与 OpenCode 的会话标题为纯文本，保持点击穿透），独立显示的统一 Liquid Glass 控制组仍可接收指针输入。
-- 非 Debug 的 `.app` 首次启动时自动配置登录启动。
+Codex 回合在 3 分钟没有日志活动后会显示为暂停，并在最后一次活动后 10 分钟过期；只有被推断为静默造成的暂停才会因新活动恢复。已完成、明确暂停和已终止的任务会保留 10 分钟。Claude Code 和 OpenCode 从本地记录推断回合，并在会话超过 12 分钟没有活动后移除仍在运行的回合。因此，长时间无输出的工具调用可能暂时显示为暂停或消失。
 
-Codex 额度以会话日志中时间最新的 `rate_limits` 快照为准，避免旧会话覆盖当前额度。只有日志实际包含该字段时才会显示额度。
+非 Debug 的 `.app` 会在首次启动时配置登录启动，并遵守你之后在系统设置中的禁用操作。Debug 构建和原始可执行文件（包括 `swift run`）不会改动登录项。
 
-## 资源占用
+## 本地数据与刷新
 
-- 首次启动需要读取现有历史数据；JSONL 使用固定大小分块逐行解析，不会把整个日志文件同时展开为 `Data` 和 `String`。
-- Codex 与 Claude Code 的解析结果按文件缓存，OpenCode 按数据库/WAL/SHM 版本缓存，后续刷新只重新解析新增或发生变化的数据。
-- Codex 与 Claude Code 任务日志按字节游标增量读取；Codex 任务索引与 OpenCode 任务查询会短期缓存，避免每次轮询都重新查询 SQLite。
-- 用户会话锁定或显示器休眠时暂停用量与任务数据刷新，并冻结执行中任务的状态动画；解锁且显示器重新唤醒后立即恢复。
-- 数据内容未变化时不会重复发布 SwiftUI 状态。倒计时、任务时长和运行指示器只刷新各自的小型子视图，避免整个面板高频重绘。
+除了在本机按标准位置使用受支持的工具外，无需 API 密钥或其他数据源设置：
 
-冷启动仍可能因本机历史数据量较大而出现短暂内存峰值；完成首次扫描后应回落到稳定态。后续周期刷新不应再次全量扫描所有历史文件。
+| 数据源 | 读取的记录 |
+| --- | --- |
+| Codex 用量 | `~/.codex/sessions/**/*.jsonl`、`~/.codex/archived_sessions/**/*.jsonl` |
+| Codex 任务索引 | `~/.codex/state_*.sqlite` 及其引用的会话日志 |
+| Claude Code 用量和任务 | `~/.claude/projects/**/*.jsonl` |
+| OpenCode 用量和任务 | `~/.local/share/opencode/opencode.db`，包括 WAL/SHM 变更检测 |
 
-## 环境要求
+缺失或无法读取的数据源只会影响对应工具。用量汇总覆盖可见的 14 天窗口，衍生数据只保存在内存中。冷启动扫描会筛选相关文件和记录；后续扫描复用内存状态并处理新增或变更内容。JSONL 读取采用分块方式，不会创建衍生用量数据库或磁盘缓存。会话未处于活动状态或显示器进入睡眠时，用量和任务刷新以及任务状态动画都会暂停；两项条件都恢复后才会继续。
 
-- macOS 26+
-- Xcode 26+ / Swift 6.2+
-- SQLite 3
+### 隐藏和恢复任务活动
 
-## 运行
+在任务活动面板的控制项中选择 **隐藏任务活动面板**，然后在用量概览面板中选择 **显示任务活动面板** 即可恢复。隐藏状态会跨启动保留，会取消任务监测、清空任务，并在取消的读取退出后释放仅供任务使用的缓存。同时会移除任务视图、链接、控制项和墙纸采样区域。用量扫描保持独立，仍可能读取相同日志。恢复时会保留面板偏好设置并扫描当前记录；隐藏期间的时间仍会计入过期时间。
+
+```mermaid
+flowchart TD
+    A[Launch or visibility change] --> B{Task panel hidden?}
+    B -->|Yes| C[Cancel task loop and invalidate generation]
+    C --> D[Clear tasks and release monitors and task views]
+    D --> E[Keep usage panel and restore control]
+    E -->|Show| B
+    B -->|No| F{Session active and display awake?}
+    F -->|No| G[Wait without polling]
+    G -->|Activation or wake| F
+    F -->|Yes| H[Create task monitors if needed and scan]
+    H --> I{Generation current and still allowed?}
+    I -->|Yes| J[Publish changed tasks and poll again]
+    J --> F
+    I -->|No| K[Discard result]
+```
+
+[UsageModel.swift](Sources/CodexPulse/UsageModel.swift) 负责刷新条件和扫描结果有效性；[TaskMonitoringSession.swift](Sources/CodexPulse/TaskMonitoringSession.swift) 负责三个任务监视器。隐藏启动时不会启动任务监测。对象释放并不保证可回收的分配器页面会立即从进程占用中消失。
+
+## 开发与验证
+
+使用 macOS 26+、Xcode 26+ 以及已选定的 Swift 6.2+ 工具链，并使用系统提供的 SQLite 3 库。[Swift package](Package.swift) 没有外部包依赖。请从仓库根目录运行以下命令：
 
 ```bash
+swift build
 swift run "Codex Pulse"
-```
-
-应用以 accessory 模式运行，不显示 Dock 图标。`swift run`、其他原始可执行文件以及 Debug 构建均不会读取、写入或配置登录启动项。只有非 Debug 的 `.app` 会使用 macOS `SMAppService` 配置系统登录项。
-
-如果用户在系统设置中关闭登录项，应用不会在之后的普通启动中强制重新启用它。
-
-## 发布
-
-推送形如 `v0.1.0` 的标签会触发 `.github/workflows/release.yml`，分别在 GitHub 的 macOS 26 arm64 与 Intel 托管运行器上构建：
-
-- `Codex-Pulse-arm64.dmg`
-- `Codex-Pulse-x86_64.dmg`
-- `SHA256SUMS`
-
-工作流随后创建或更新对应的 GitHub Release。若仓库变量 `PUBLISH_NPM=true` 且已配置 npm 发布凭据 `NPM_TOKEN`，同一版本也会发布为 `@iwecon/codex-pulse`。
-
-## 测试
-
-```bash
 swift test
 ```
 
-测试覆盖日志解析、日期处理、Codex 最新额度选择、任务状态、紧凑数字格式、登录启动资格、Dock 面板布局与控制组几何、窗口层级、墙纸坐标映射与外观选择、墙纸缓存失效，以及锁屏与休眠时的刷新状态切换。
+对于 Debug `.app`，请从仓库根目录使用 `./script/build_and_run.sh`。它会停止现有的 `Codex Pulse` 进程，重新构建 `dist/Codex Pulse Debug.app` 并启动它。脚本还支持 `--debug`、`--logs`、`--telemetry` 和 `--verify`；详情请参阅[该脚本](script/build_and_run.sh)。
 
-## 数据来源
+[测试套件](Tests/CodexPulseTests)覆盖解析器、增量扫描、额度计算、任务生命周期、面板几何、墙纸行为、本地化和登录资格。[AGENTS.md](AGENTS.md)记录项目约束，以及需要运行完整测试套件或进行 UI 与内存检查的变更。
 
-- Codex 用量：`~/.codex/sessions/**/*.jsonl` 与 `~/.codex/archived_sessions/**/*.jsonl`
-- Codex 任务索引：`~/.codex/state_*.sqlite`
-- Claude Code 用量与任务：`~/.claude/projects/**/*.jsonl`
-- OpenCode 用量与任务：`~/.local/share/opencode/opencode.db`
+如需针对本机会话执行可选的只读任务内存检查，请从仓库根目录运行：
 
-数据源读取失败或不存在时只影响对应工具，不会上传数据或修改原始会话记录。
+```bash
+CODEXPULSE_LOCAL_TASK_MEMORY=1 swift test --filter TaskMonitoringMemoryTests
+```
 
-### 周 token 总量估算
+普通测试套件会跳过此探针。它会在三个可见性周期内检查监视器释放和隐藏时是否轮询，并分别报告物理占用与对象生命周期。
 
-周额度底行以“{剩余时间}后重置”显示倒计时（窄面板保持重置含义），旁边显示“已用 20M / 估算 80M”，窄面板简写为 `20M / ≈80M`，不增加行数。估算公式为本周期 Codex token 数 ÷ 原始已用百分比 × 100。它反映当前使用结构，并非固定官方 token 额度；本地日志可能缺少其他设备或云端用量。百分比为零或无效、用量缺失、估算超出可表示范围时只显示已用量。悬停周额度显示/隐藏按钮可查看说明。
+## 代码导航
 
-### 任务暂停与隐藏
+| 区域 | 入口 |
+| --- | --- |
+| 应用与面板控制 | [App.swift](Sources/CodexPulse/App.swift)、[DockPanelResizing.swift](Sources/CodexPulse/DockPanelResizing.swift)、[CodexSessionLink.swift](Sources/CodexPulse/CodexSessionLink.swift) |
+| 用量汇总与模型 | [UsageScanner.swift](Sources/CodexPulse/UsageScanner.swift)、[Models.swift](Sources/CodexPulse/Models.swift) |
+| 刷新与任务生命周期 | [UsageModel.swift](Sources/CodexPulse/UsageModel.swift)、[TaskMonitoringSession.swift](Sources/CodexPulse/TaskMonitoringSession.swift)、[RefreshActivityGate.swift](Sources/CodexPulse/RefreshActivityGate.swift) |
+| 墙纸外观 | [WallpaperAppearance.swift](Sources/CodexPulse/WallpaperAppearance.swift)、[WallpaperSourceResolver.swift](Sources/CodexPulse/WallpaperSourceResolver.swift)、[AdaptiveTextColor.swift](Sources/CodexPulse/AdaptiveTextColor.swift) |
+| 偏好设置与启动 | [AppLanguage.swift](Sources/CodexPulse/AppLanguage.swift)、[ToolBarColorSettings.swift](Sources/CodexPulse/ToolBarColorSettings.swift)、[LaunchAtLoginManager.swift](Sources/CodexPulse/LaunchAtLoginManager.swift) |
+| 产品网站与分发 | [docs/index.html](docs/index.html)、[Homebrew cask](Casks/codex-pulse.rb)、[npm package](package.json)、[release workflow](.github/workflows/release.yml) |
 
-Codex 手动终止和 Goal 暂停统一显示 ⏸。所有日志追加（工具调用、输出、用量事件和不完整行）都算活动；连续 3 分钟无新日志会推断为暂停，从最后活动起满 10 分钟后隐藏。静默暂停后有新日志便恢复进行中；明确暂停或完成不会被普通输出撤销。长时间不输出的工具也可能暂时显示暂停。同一会话开始新一轮时，会收束缺少结束记录的旧轮次。
+## 打包与发布
 
-在任务活动面板控制区点击“隐藏任务活动面板”，即可停止三类工具的任务监测并释放任务缓存、游标、缓冲、视图及链接窗口。隐藏状态在重启后保留。用量概览面板继续正常刷新，并提供“显示任务活动面板”按钮；唤起后重新扫描当前有效任务，保留原有宽度、位置和对齐设置。隐藏期间经过的时间正常计入任务有效期。用量统计仍可能读取同一批源文件；不会修改或删除原始记录。
+如需本地打包，请在具备上述开发前置条件的情况下从仓库根目录运行，选择 `arm64` 或 `x86_64`，并将 `X.Y.Z` 替换为数字版本号：
+
+```bash
+./script/package_release.sh --arch arm64 --version X.Y.Z --output dist
+```
+
+此命令会构建发布版应用并写入 `dist/Codex-Pulse-arm64.dmg`，不会发布它。本地打包默认使用 ad hoc 签名。[打包脚本](script/package_release.sh)接受 `--signing-identity` 和可选的 `--signing-keychain`，用于 Developer ID 签名，并会拒绝非系统动态依赖（包括外部 SQLite 库）。
+
+推送 `vX.Y.Z` 标签或手动运行[发布工作流](.github/workflows/release.yml)时，工作流会构建两个架构，并创建或更新公开的 GitHub Release，其中包含 DMG 和 `SHA256SUMS`。CI 需要 Developer ID Application 证书/私钥以及 App Store Connect API 密钥来完成签名、公证和装订；确切的仓库密钥名称与验证步骤定义在该工作流中。有版本对应的精选说明时，会使用 `.github/release-notes/vX.Y.Z.md`。可选的 npm 发布由 `PUBLISH_NPM=true` 和 `NPM_TOKEN` 控制。这些操作会发布构建产物并需要发布凭据；上面的命令只涉及本地开发和打包。

@@ -9,137 +9,135 @@
   <strong>한국어</strong>
 </p>
 
-Codex Pulse는 SwiftUI와 AppKit으로 만든 개인정보 보호 중심의 macOS 데스크톱 보조 앱입니다. Dock 옆의 **사용량 개요 패널(Usage Overview Panel)**과 **작업 활동 패널(Task Activity Panel)**에서 로컬 Codex, Claude Code, OpenCode의 토큰 사용량과 Codex 주간 한도, 최근 작업 상태를 보여 줍니다. 모든 데이터는 Mac에서만 읽으며 업로드하지 않습니다.
+Codex Pulse는 Dock 옆에 로컬 Codex, Claude Code, OpenCode의 사용량과 작업 활동을 보여 주는 macOS 26+ 데스크톱 보조 앱입니다. SwiftUI와 AppKit으로 만들었으며, 사용량 데이터를 업로드하거나 원본 기록을 수정하지 않고 로컬 기록을 읽습니다.
 
 <p align="center">
   <a href="https://iwecon.github.io/CodexPulse/">
-    <img src="docs/assets/codex-pulse-preview.jpg" alt="Codex Pulse 제품 미리보기: macOS Dock 양옆의 사용량 개요 패널과 작업 활동 패널" width="1200">
+    <img src="docs/assets/codex-pulse-preview.jpg" alt="macOS Dock 옆에 표시된 Codex Pulse 사용량 패널과 작업 패널" width="1200">
   </a>
 </p>
 
-<p align="center">
-  <a href="https://iwecon.github.io/CodexPulse/">제품 페이지</a>
-  ·
-  <a href="https://github.com/iwecon/CodexPulse/releases/latest">최신 버전 다운로드</a>
-  ·
-  <a href="https://github.com/iwecon/CodexPulse">소스 보기</a>
-</p>
-
-데스크톱 브라우저의 제품 페이지에는 테마 메뉴, 드래그할 수 있는 창, Activity Monitor 실시간 지표, 실제 앱과 동일한 Dock 패널 컨트롤, 명암 테마에 맞춘 실제 시스템 앱 아이콘을 갖춘 대화형 macOS 데스크톱 데모가 있습니다. 너비가 760px 이하일 때는 세로형 모바일 레이아웃을 유지합니다.
+[제품 페이지 및 인터랙티브 데모](https://iwecon.github.io/CodexPulse/) · [릴리스 다운로드](https://github.com/iwecon/CodexPulse/releases/latest)
 
 ## 설치
 
-Codex Pulse에는 macOS 26 이상이 필요합니다. GitHub Actions가 Apple Silicon(arm64)과 Intel(x86_64)용 DMG를 각각 빌드하고, 각 버전을 [GitHub Releases](https://github.com/iwecon/CodexPulse/releases/latest)에 게시합니다.
+macOS 26 이상에서는 Releases에서 Mac에 맞는 DMG를 다운로드합니다. Apple Silicon용은 `Codex-Pulse-arm64.dmg`, Intel용은 `Codex-Pulse-x86_64.dmg`입니다. DMG를 열고 `Codex Pulse.app`을 Applications에 복사합니다.
 
-### AI 지원 설치
-
-다음 프롬프트를 코딩 도우미에 그대로 전달하세요.
-
-```text
-From https://iwecon.github.io/CodexPulse/ to Install CodexPulse. Try Homebrew first, then npm, and finally download and install via the GitHub Release Page.
-```
-
-### Homebrew
-
-이 저장소는 사용자 정의 Tap 역할도 합니다.
+Homebrew가 설치되어 있다면 이 저장소의 Tap을 대신 사용할 수 있습니다.
 
 ```bash
 brew tap iwecon/codex-pulse https://github.com/iwecon/CodexPulse
 brew install --cask iwecon/codex-pulse/codex-pulse
 ```
 
-### npm
-
-npm 패키지는 명시적인 설치 CLI를 제공합니다. `npm install` 중에 몰래 DMG를 마운트하거나 응용 프로그램 폴더를 변경하지 않습니다.
+대체 설치 프로그램을 사용하려면 Node.js 18+와 npm이 필요합니다.
 
 ```bash
 npm install -g github:iwecon/CodexPulse
 codex-pulse install
+codex-pulse open
 ```
 
-기본 설치 위치는 `~/Applications/Codex Pulse.app`입니다. 다시 설치하려면 `codex-pulse install --force`, 앱을 열려면 `codex-pulse open`을 사용합니다. 저장소에 npm 게시 자격 증명이 구성되면 `npm install -g @iwecon/codex-pulse`도 사용할 수 있습니다.
+npm 명령은 어느 디렉터리에서나 실행할 수 있습니다. CLI만 설치해도 앱은 설치되지 않습니다. `codex-pulse install`은 릴리스 DMG를 다운로드하고 마운트한 뒤 앱을 `~/Applications/Codex Pulse.app`에 복사합니다. 기존 설치를 교체하려면 `--force`를 추가합니다. 지원되는 명령은 [설치 프로그램 CLI](npm/bin/codex-pulse.js)를 참조하세요.
 
-### 서명 안내
+## 패널 사용
 
-현재 공개 빌드는 임시 서명을 사용하며 Apple Developer ID 서명과 공증은 아직 적용되지 않았습니다. 다운로드한 빌드를 처음 열 때 macOS가 출처 확인 메시지를 표시할 수 있습니다. Developer ID와 공증 자격 증명을 구성하면 릴리스 워크플로를 완전한 서명 및 공증 절차로 전환할 수 있습니다.
+앱에는 Dock 아이콘이 없습니다. 투명한 패널은 데스크톱 아이콘 위와 일반 앱 창 아래에 머물며, Dock이 아래쪽·왼쪽·오른쪽에 있을 때 그 배치를 따르고 여러 Space를 지원합니다.
 
-## 패널 용어
+| 패널 | 표시 내용 |
+| --- | --- |
+| **Usage Overview Panel** (`用量概览面板`) | 롤링 14일 토큰 사용 추세와 도구별 합계, 그리고 제공되는 경우 Codex 주간 쿼터를 표시합니다. 해당 기간에 사용량이 없는 도구는 자동으로 숨깁니다. |
+| **Task Activity Panel** (`任务活动面板`) | 세 도구 모두의 활성 작업과 최근 작업을 프로젝트와 세션별로 묶어 상태 표시기와 최신 사용자 메시지와 함께 보여 줍니다. |
 
-- **사용량 개요 패널(Usage Overview Panel)**: Dock이 화면 아래에 있을 때 왼쪽에 나타나며, 최근 14일의 토큰 사용 추세와 Codex 주간 한도를 요약합니다.
-- **작업 활동 패널(Task Activity Panel)**: Dock이 화면 아래에 있을 때 오른쪽에 나타나며, 실행 중이거나 최근 완료된 Codex, Claude Code, OpenCode 작업을 프로젝트와 세션별로 표시합니다.
+기본적으로 아래쪽 Dock에서는 사용량이 왼쪽, 작업이 오른쪽에 표시됩니다. Dock이 세로 방향이면 사용량이 작업 위에 표시됩니다. 패널을 이동해도 이 이름이 가리키는 역할은 바뀌지 않습니다.
 
-이 이름은 패널의 역할을 나타내며 문서, 요구 사항, 코드 논의에서 사용하는 공식 명칭입니다. Dock이 왼쪽 또는 오른쪽에 있으면 사용량 개요 패널은 위로, 작업 활동 패널은 아래로 이동하지만 위치에 따라 이름이 바뀌지 않습니다.
+패널 안에서 포인터를 0.5초 동안 멈추면 컨트롤이 나타납니다. 크기 조절 가장자리를 드래그하거나 버튼을 사용해 패널을 이동하고 쌓이는 순서를 바꿀 수 있습니다. Usage Overview Panel에는 언어 선택, 도구별 막대 색상, 주간 쿼터 표시, Photos 배경화면 권한도 있습니다. Task Activity Panel에는 텍스트 정렬과 숨기기 버튼이 있습니다. 설정은 로컬에 저장됩니다. 인터페이스는 중국 본토 간체 중국어, 홍콩·대만 번체 중국어, 일본어, 한국어, 영어를 지원하며 초기 기본값은 간체 중국어입니다.
 
-## 기능
+일반 콘텐츠는 클릭을 통과합니다. Codex 세션 제목을 열면 해당 ChatGPT 대화가 열리고, Claude Code와 OpenCode 제목은 클릭을 통과합니다. 텍스트는 각 패널 아래의 배경화면에 맞춰 조정됩니다. 샘플링에는 로컬 자산만 사용하며 화면을 캡처하지 않습니다. Photos 보관함 배경화면은 기존 접근 권한을 사용하고, 컨트롤에서 명시적으로 요청할 때만 추가 권한을 요청합니다. 사용할 수 없는 배경화면 자산은 이미지를 다운로드하지 않고 시스템 외관으로 대체합니다.
 
-- Codex(`~/.codex`), Claude Code(`~/.claude/projects`), OpenCode(`~/.local/share/opencode`)의 토큰 사용량을 집계합니다. 보이는 14일 범위 안에 사용량이 있는 도구는 자동으로 표시되고, 설치되지 않았거나 14일 넘게 사용하지 않은 도구는 설정 없이 자동으로 숨겨집니다.
-- 최근 14일의 사용 추세를 표시합니다. 활성 도구가 하나면 단색 추세를 유지하고 오늘 날짜 옆에 오늘의 토큰 사용량을 표시합니다. 여러 도구가 활성 상태면 하루 막대를 도구별 고정 색상 세그먼트로 쌓아 올리고(명도는 배경화면 적응형 텍스트 극성을 따름), 색 점 범례에 각 도구의 14일 합계를 표시합니다.
-- Codex 주간 한도(로컬 한도 데이터는 Codex만 제공하며, Codex를 14일 동안 사용하지 않으면 이 섹션은 숨겨집니다), 남은 비율, 재설정 시각, 남은 시간에 따라 정밀도가 높아지는 카운트다운(마지막 1분은 초 표시), 정확한 잔여 시간으로 계산한 일일 사용 가능 비율을 표시합니다.
-- 작업 활동 패널은 보이는 내용에 맞춰 높이를 동적으로 조절하며 높이 상한이 없습니다. 아래에서부터 Codex, Claude Code, OpenCode의 실행 중인 모든 작업과 최근 10분 안에 완료된 작업을 프로젝트와 세션별로 보여 줍니다. Claude Code와 OpenCode는 명시적인 작업 이벤트를 기록하지 않으므로 로컬 세션 기록에서 턴의 시작과 종료를 추론하며, 세션 데이터가 12분 넘게 갱신되지 않는 실행 중 턴은 중단된 것으로 간주해 제거합니다. 실행 중인 작업은 항상 모두 표시되고, 완료된 작업도 10분 표시 기간 동안 모두 표시되며 높이 때문에 행이 잘리지 않습니다. 실행 중 작업은 그라데이션 꼬리가 있는 회전 링으로 표시됩니다. 상태 아이콘(링과 완료 체크 표시)은 세션별로 색이 지정되며, 각 세션은 ID에서 안정적인 색조를 파생하므로 동시에 진행 중인 세션을 한눈에 구분할 수 있습니다. 작업 추가와 제거에는 짧은 전환 효과가 적용되고 시스템의 동작 줄이기 설정을 따릅니다. 완료 후 3분이 지나면 메시지 대비가 낮아지고 10분 후 목록에서 사라집니다. 최신 사용자 메시지는 실제 길이에 맞는 한두 줄로 간결하게 표시합니다.
-- Dock이 아래, 왼쪽, 오른쪽 어디에 있든 자동으로 패널 위치를 조정합니다.
-- 두 기본 패널의 본문, 세션 제목, 프로젝트 제목은 모두 흰색 글자와 하나의 은은한 검은 그림자로 표시합니다. 기본·보조 텍스트의 밝기 단계는 유지합니다. 패널은 완전히 투명하고 화면을 캡처하지 않으며 화면 기록 권한이 필요 없습니다.
-- 각 패널은 그 아래 데스크톱 배경화면 영역을 따로 샘플링해 다른 의미론적 외관 요소의 명암을 선택합니다. 시스템 외관이 바뀌면 대체 외관을 즉시 적용하고, 배경화면 전환이 끝나면 캐시를 비운 뒤 각 영역 샘플링을 복원합니다. Space 전환, 디스플레이 깨우기, 로그인 세션 복귀 시 배경화면 파일과 표시 옵션을 다시 확인하며 상태가 바뀐 경우에만 다시 샘플링합니다.
-- 패널은 데스크톱 아이콘 위, 일반 앱 창 아래에 있어 현재 사용 중인 앱을 가리지 않습니다.
-- 포인터가 어느 패널 안에서든 0.5초 동안 움직이지 않으면 안쪽 크기 조절 가장자리에 콘텐츠 너비를 덮는 통합 Liquid Glass 가로 컨트롤이 나타납니다. 포인터를 움직이면 타이머가 다시 시작되며 두 패널은 같은 페이드인 효과를 씁니다. 모든 유리 표면은 연속 모서리를 사용합니다. 34px 크기 조절 구간은 콘텐츠 안쪽에 있으며 왼쪽 패널에서는 오른쪽, 오른쪽 패널에서는 왼쪽에 맞춰집니다. 작업 버튼처럼 바깥쪽 6px 여백에서도 반응합니다. 나머지 작업 영역은 버튼들이 똑같이 나누어 채웁니다. 왼쪽 패널은 왼쪽 가장자리를 고정하고 오른쪽에서, 오른쪽 패널은 반대 방향에서 크기를 조절합니다. 아래쪽 Dock이 높으면 상호작용 영역이 위로 늘어납니다. 포인터가 패널과 컨트롤의 결합 영역을 벗어나면 1초 뒤 사라지며, 다시 들어오거나 드래그하는 동안에는 계속 표시됩니다.
-- 포인터가 34px 크기 조절 구간에 들어가면 다른 버튼은 0.34초 동안 0.98배로 줄면서 사라집니다. 바깥 Liquid Glass 배경은 전체 너비를 유지하면서 6px 여백만 안쪽으로 줄이고 모서리를 10px로 바꾸며 투명해집니다. 애니메이션이 끝난 뒤에야 상호작용 창이 크기 조절 구간으로 줄어들어 투명 영역이 클릭을 가로채지 않습니다. 구간을 벗어나는 것만으로는 복원되지 않으며 실제 작업 버튼 영역에 들어가야 돌아옵니다. 드래그 중에는 포인터를 놓을 때까지 크기 조절 구간만 남습니다.
-- 좌우 이동 버튼은 항상 있으며 패널을 반대 논리적 면으로 옮길 수 있습니다. 옮긴 뒤에는 버튼 방향이 반대로 바뀝니다. 두 패널이 같은 면에 있으면 위아래 순서를 바꾸는 버튼도 표시됩니다. 아래쪽 Dock에서는 논리적 면이 좌우에, 세로 Dock에서는 위아래에 대응합니다. 위치와 각 패널 너비는 저장되어 다음 실행 때 복원되며, 현재 화면과 Dock 및 사용 가능한 공간에 맞게 제한해 패널 겹침을 막습니다. 사용량 개요 패널이 논리적 오른쪽에 있으면 추세와 한도 레이아웃도 반전되어 오른쪽 정렬됩니다.
-- 작업 활동 패널 컨트롤에는 자동, 왼쪽, 오른쪽 정렬을 순환하는 텍스트 정렬 버튼이 있습니다. 아이콘과 선택 사항이 함께 갱신되고 설정은 저장됩니다. 자동 정렬은 논리적 왼쪽에서 왼쪽, 오른쪽에서 오른쪽이며, 오른쪽 정렬일 때는 소요 시간이 상태 아이콘 앞에 놓입니다.
-- 사용량 개요 패널 컨트롤에는 언어 버튼이 있습니다. 누르면 작업 영역이 네이티브 AppKit 세로 휠 선택기로 바뀌며, 보이는 언어 클릭, 누른 채 위아래로 드래그, 마우스 휠, 트랙패드로 즉시 전환할 수 있습니다. 중국 본토 간체 중국어, 홍콩 번체 중국어, 대만 번체 중국어, 일본어, 한국어, 영어를 지원합니다. 선택은 두 패널, 날짜 형식, AppKit 손쉬운 사용 레이블과 도구 설명에 적용되며 로컬 `UserDefaults`에만 저장됩니다. 최초 실행 기본값은 중국 본토 간체 중국어입니다.
-- 사용량 개요 패널 컨트롤에는 색상 버튼(팔레트 아이콘)도 있습니다. 누르면 떠 있는 설정 창이 열리며 각 제품의 사용량 막대 색상을 사용자 지정할 수 있습니다. 사용자 지정 색상은 밝은/어두운 패널 모양 모두에서 동일하게 적용되는 고정 색상으로, 누적 추이 구간, 두 곳의 범례, 단일 제품 추이 막대, Codex 주간 한도 막대에 반영됩니다. 각 제품을 개별적으로 또는 모두 한 번에 기본값으로 복원할 수 있으며, 선택은 로컬 `UserDefaults`에만 저장됩니다.
-- 일반 패널 콘텐츠는 클릭을 통과시키며 앱을 활성화하지 않습니다. 작업 활동 패널의 Codex 세션 제목은 클릭할 수 있고 해당 대화를 ChatGPT에서 엽니다. Claude Code와 OpenCode의 세션 제목은 일반 텍스트로 표시되며 클릭이 통과됩니다. 별도의 Liquid Glass 컨트롤은 포인터 입력을 계속 받습니다.
-- Debug가 아닌 `.app`은 처음 실행할 때 로그인 시 실행을 구성합니다.
+로컬 쿼터 스냅샷을 제공하는 도구는 Codex뿐입니다. 최신 계정 수준 레코드를 사용해 남은 쿼터를 `100 - used_percent`로 계산합니다. 바닥글의 주간 토큰 합계는 추정치이며, 계산은 `tokens recorded in the quota window ÷ used_percent × 100`이고 원시 소비 백분율을 사용합니다. 공식 토큰 허용량이 아니며 다른 기기나 클라우드 세션의 활동이 빠질 수 있습니다. 입력이 없거나 유효하지 않으면 사용량만 표시합니다. 설명을 보려면 주간 쿼터 표시 컨트롤 위에 포인터를 올리세요.
 
-Codex 한도는 세션 로그에서 이벤트 시각이 가장 최신인 `rate_limits` 스냅샷을 기준으로 선택합니다. 오래된 세션이 현재 한도를 덮어쓰지 않으며, 로그에 해당 필드가 실제로 있을 때만 표시합니다.
+로그 활동이 3분 동안 없는 Codex 턴은 일시 중지된 것으로 표시되고 마지막 활동 후 10분이 지나면 만료됩니다. 새 활동으로 재개되는 것은 로그 출력이 없어 추론된 일시 중지뿐입니다. 완료된 작업, 명시적으로 일시 중지된 작업, 종료된 작업은 10분 동안 남습니다. Claude Code와 OpenCode는 로컬 기록에서 턴을 추론하며 세션이 12분 넘게 비활성 상태인 실행 중 턴을 제거합니다. 따라서 오랫동안 로그 출력이 없는 도구 호출은 잠시 일시 중지로 보이거나 사라질 수 있습니다.
 
-## 리소스 사용
+Debug가 아닌 `.app`은 처음 실행할 때 로그인 시 실행을 구성하고, 이후 시스템 설정에서 사용자가 비활성화한 상태를 존중합니다. Debug 빌드와 원시 실행 파일(`swift run` 포함)은 로그인 항목을 변경하지 않습니다.
 
-- 처음 실행할 때 기존 기록을 읽습니다. JSONL은 고정 크기 청크로 한 줄씩 파싱하며 전체 로그를 `Data`와 `String`으로 동시에 펼치지 않습니다.
-- Codex와 Claude Code 파싱 결과는 파일별로, OpenCode는 데이터베이스/WAL/SHM 버전별로 캐시되어 이후에는 새로 추가되거나 변경된 데이터만 다시 파싱합니다.
-- Codex와 Claude Code 작업 로그는 바이트 커서에서 증분 방식으로 읽습니다. Codex 작업 인덱스와 OpenCode 작업 쿼리는 잠시 캐시하여 폴링할 때마다 SQLite를 조회하지 않습니다.
-- 사용자 세션이 잠기거나 디스플레이가 잠들면 사용량 및 작업 새로 고침을 멈추고 실행 중 작업 애니메이션도 멈춥니다. 잠금 해제와 화면 깨우기 직후 다시 시작합니다.
-- 같은 데이터는 SwiftUI 상태로 반복 게시하지 않습니다. 카운트다운, 작업 시간, 활동 표시는 필요한 가장 작은 리프 뷰만 갱신하여 패널 전체가 자주 다시 그려지는 것을 피합니다.
+## 로컬 데이터 및 새로 고침
 
-로컬 기록이 많으면 콜드 스타트 중 메모리 사용량이 잠시 치솟을 수 있지만 첫 스캔 후에는 안정 상태로 돌아와야 합니다. 주기적 새로 고침은 모든 기록 파일을 다시 전부 스캔하지 않습니다.
+지원되는 도구를 표준 로컬 데이터 위치에서 사용하기만 하면 API 키나 소스 설정이 필요하지 않습니다.
 
-## 요구 사항
+| 소스 | 읽는 레코드 |
+| --- | --- |
+| Codex 사용량 | `~/.codex/sessions/**/*.jsonl`, `~/.codex/archived_sessions/**/*.jsonl` |
+| Codex 작업 인덱스 | `~/.codex/state_*.sqlite` 및 이 파일이 참조하는 세션 로그 |
+| Claude Code 사용량 및 작업 | `~/.claude/projects/**/*.jsonl` |
+| OpenCode 사용량 및 작업 | `~/.local/share/opencode/opencode.db` 및 WAL/SHM 변경 감지 |
 
-- macOS 26+
-- Xcode 26+ / Swift 6.2+
-- SQLite 3
+소스가 없거나 읽을 수 없으면 해당 도구만 영향을 받습니다. 사용량 집계는 보이는 14일 범위를 대상으로 하며 파생 데이터는 메모리에만 보관합니다. 콜드 스캔에서는 관련 파일과 행을 필터링하고, 이후 스캔에서는 메모리 상태를 재사용해 추가되거나 변경된 부분만 처리합니다. JSONL은 청크 단위로 읽으며 파생 사용량 데이터베이스나 디스크 캐시를 만들지 않습니다. 세션이 비활성 상태이거나 디스플레이가 잠들어 있는 동안에는 사용량 및 작업 새로 고침과 작업 상태 애니메이션을 모두 일시 중지하고, 두 조건이 모두 해제되면 재개합니다.
 
-## 실행
+### 작업 활동 숨기기 및 복원
+
+컨트롤에서 **작업 활동 패널 숨기기**를 선택한 다음, 복원하려면 Usage Overview Panel에서 **작업 활동 패널 표시**를 선택합니다. 숨김 상태는 실행 사이에도 유지되고 작업 모니터링을 취소하며 작업을 지웁니다. 취소된 읽기가 끝나면 작업 전용 캐시를 해제합니다. 또한 작업 뷰, 링크, 컨트롤, 배경화면 샘플링 영역을 제거합니다. 사용량 스캔은 독립적으로 계속되며 같은 로그를 읽을 수 있습니다. 복원해도 패널 설정은 유지되고 현재 레코드를 스캔합니다. 숨겨진 시간도 만료에 포함됩니다.
+
+```mermaid
+flowchart TD
+    A[Launch or visibility change] --> B{Task panel hidden?}
+    B -->|Yes| C[Cancel task loop and invalidate generation]
+    C --> D[Clear tasks and release monitors and task views]
+    D --> E[Keep usage panel and restore control]
+    E -->|Show| B
+    B -->|No| F{Session active and display awake?}
+    F -->|No| G[Wait without polling]
+    G -->|Activation or wake| F
+    F -->|Yes| H[Create task monitors if needed and scan]
+    H --> I{Generation current and still allowed?}
+    I -->|Yes| J[Publish changed tasks and poll again]
+    J --> F
+    I -->|No| K[Discard result]
+```
+
+[UsageModel.swift](Sources/CodexPulse/UsageModel.swift)은 새로 고침 가능 여부와 세대를 관리하고, [TaskMonitoringSession.swift](Sources/CodexPulse/TaskMonitoringSession.swift)은 세 가지 작업 모니터를 관리합니다. 숨김 상태로 실행하면 작업 모니터링을 시작하지 않습니다. 객체를 해제해도 회수 가능한 할당자 페이지가 프로세스 풋프린트에서 즉시 사라진다는 보장은 없습니다.
+
+## 개발 및 검증
+
+macOS 26+, 선택된 Swift 6.2+ 툴체인이 있는 Xcode 26+, 시스템 SQLite 3 라이브러리를 사용하세요. [Swift 패키지](Package.swift)에는 외부 패키지 의존성이 없습니다. 저장소 루트에서 다음 명령을 실행합니다.
 
 ```bash
+swift build
 swift run "Codex Pulse"
-```
-
-앱은 Dock 아이콘이 없는 accessory 모드로 실행됩니다. `swift run`, 기타 원시 실행 파일, Debug 빌드는 로그인 항목을 읽거나 쓰거나 구성하지 않습니다. Debug가 아닌 `.app`만 macOS `SMAppService`를 사용해 로그인 시 실행을 구성합니다.
-
-사용자가 시스템 설정에서 로그인 항목을 끄면 이후 일반 실행 중에 앱이 강제로 다시 켜지 않습니다.
-
-## 릴리스
-
-`v0.1.0` 같은 태그를 푸시하면 `.github/workflows/release.yml`이 실행되어 GitHub 호스팅 macOS 26 arm64 및 Intel 러너에서 각각 다음 파일을 빌드합니다.
-
-- `Codex-Pulse-arm64.dmg`
-- `Codex-Pulse-x86_64.dmg`
-- `SHA256SUMS`
-
-그런 다음 해당 GitHub Release를 만들거나 갱신합니다. 저장소 변수 `PUBLISH_NPM=true`와 npm 자격 증명 `NPM_TOKEN`이 구성되어 있으면 같은 버전을 `@iwecon/codex-pulse`로도 게시합니다.
-
-## 테스트
-
-```bash
 swift test
 ```
 
-테스트는 로그 파싱, 날짜 처리, 최신 Codex 한도 선택, 작업 상태, 간결한 숫자 형식, 로그인 시 실행 자격, Dock 패널 배치와 컨트롤 기하 구조, 창 레벨, 배경화면 좌표 매핑과 외관 선택, 배경화면 캐시 무효화, 잠금 및 절전 중 새로 고침 상태 전환을 다룹니다.
+Debug `.app`의 경우 저장소 루트에서 `./script/build_and_run.sh`를 사용합니다. 기존 `Codex Pulse` 프로세스를 중지하고 `dist/Codex Pulse Debug.app`을 다시 빌드한 뒤 실행합니다. 이 스크립트는 `--debug`, `--logs`, `--telemetry`, `--verify`도 지원합니다. 자세한 내용은 [스크립트](script/build_and_run.sh)를 참조하세요.
 
-## 데이터 소스
+[테스트 스위트](Tests/CodexPulseTests)는 파서, 증분 스캔, 쿼터 계산, 작업 수명 주기, 패널 기하 구조, 배경화면 동작, 현지화, 로그인 시 실행 자격을 다룹니다. [AGENTS.md](AGENTS.md)에는 프로젝트별 제약과 전체 스위트 또는 UI·메모리 검사가 필요한 변경 사항이 기록되어 있습니다.
 
-- Codex 사용량: `~/.codex/sessions/**/*.jsonl` 및 `~/.codex/archived_sessions/**/*.jsonl`
-- Codex 작업 인덱스: `~/.codex/state_*.sqlite`
-- Claude Code 사용량 및 작업: `~/.claude/projects/**/*.jsonl`
-- OpenCode 사용량 및 작업: `~/.local/share/opencode/opencode.db`
+로컬 세션을 대상으로 선택적으로 읽기 전용 작업 메모리 검사를 하려면 저장소 루트에서 다음을 실행합니다.
 
-소스가 없거나 읽을 수 없으면 해당 도구만 영향을 받습니다. Codex Pulse는 데이터를 업로드하거나 원본 세션 기록을 수정하지 않습니다.
+```bash
+CODEXPULSE_LOCAL_TASK_MEMORY=1 swift test --filter TaskMonitoringMemoryTests
+```
+
+일반 스위트에서는 이 프로브를 건너뜁니다. 세 번의 표시 전환 주기 동안 모니터 해제와 숨김 상태의 폴링을 확인하고, 객체 수명과 별개로 물리적 풋프린트를 보고합니다.
+
+## 코드 탐색
+
+| 영역 | 진입점 |
+| --- | --- |
+| 앱 및 패널 컨트롤 | [App.swift](Sources/CodexPulse/App.swift), [DockPanelResizing.swift](Sources/CodexPulse/DockPanelResizing.swift), [CodexSessionLink.swift](Sources/CodexPulse/CodexSessionLink.swift) |
+| 사용량 집계 및 모델 | [UsageScanner.swift](Sources/CodexPulse/UsageScanner.swift), [Models.swift](Sources/CodexPulse/Models.swift) |
+| 새로 고침 및 작업 수명 주기 | [UsageModel.swift](Sources/CodexPulse/UsageModel.swift), [TaskMonitoringSession.swift](Sources/CodexPulse/TaskMonitoringSession.swift), [RefreshActivityGate.swift](Sources/CodexPulse/RefreshActivityGate.swift) |
+| 배경화면 외관 | [WallpaperAppearance.swift](Sources/CodexPulse/WallpaperAppearance.swift), [WallpaperSourceResolver.swift](Sources/CodexPulse/WallpaperSourceResolver.swift), [AdaptiveTextColor.swift](Sources/CodexPulse/AdaptiveTextColor.swift) |
+| 환경 설정 및 시작 | [AppLanguage.swift](Sources/CodexPulse/AppLanguage.swift), [ToolBarColorSettings.swift](Sources/CodexPulse/ToolBarColorSettings.swift), [LaunchAtLoginManager.swift](Sources/CodexPulse/LaunchAtLoginManager.swift) |
+| 제품 사이트 및 배포 | [docs/index.html](docs/index.html), [Homebrew cask](Casks/codex-pulse.rb), [npm package](package.json), [release workflow](.github/workflows/release.yml) |
+
+## 패키징 및 릴리스
+
+로컬 패키징은 위의 개발 전제 조건을 갖춘 뒤 저장소 루트에서 수행합니다. `arm64` 또는 `x86_64`를 선택하고 `X.Y.Z`를 숫자 버전으로 바꿉니다.
+
+```bash
+./script/package_release.sh --arch arm64 --version X.Y.Z --output dist
+```
+
+이 명령은 릴리스 앱을 빌드하고 `dist/Codex-Pulse-arm64.dmg`를 작성하며 공개하지는 않습니다. 로컬 패키징은 기본적으로 임시 서명을 사용합니다. [패키징 스크립트](script/package_release.sh)는 Developer ID 서명을 위한 `--signing-identity`와 선택 사항인 `--signing-keychain`을 받고, 외부 SQLite 라이브러리를 포함한 시스템 외 동적 의존성을 거부합니다.
+
+`vX.Y.Z` 태그를 푸시하거나 [릴리스 워크플로](.github/workflows/release.yml)를 수동으로 디스패치하면 두 아키텍처를 빌드하고 DMG와 `SHA256SUMS`가 포함된 공개 GitHub Release를 만들거나 갱신합니다. CI에서 서명, 공증, 티켓 스테이플링을 수행하려면 Developer ID Application 인증서/개인 키와 App Store Connect API 키가 필요합니다. 정확한 저장소 시크릿 이름과 검증 단계는 해당 워크플로에 정의되어 있습니다. 선별된 릴리스 노트는 있으면 `.github/release-notes/vX.Y.Z.md`에서 가져옵니다. 선택적 npm 게시 여부는 `PUBLISH_NPM=true`와 `NPM_TOKEN`으로 제어합니다. 이러한 작업은 아티팩트를 게시하며 릴리스 자격 증명이 필요합니다. 위 명령은 로컬 개발과 패키징만 다룹니다.

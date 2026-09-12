@@ -9,137 +9,135 @@
   <a href="README.ko.md">한국어</a>
 </p>
 
-Codex Pulse は、SwiftUI と AppKit で作られたプライバシー重視の macOS デスクトップアクセサリです。Dock のそばに表示される**使用量概要パネル（Usage Overview Panel）**と**タスクアクティビティパネル（Task Activity Panel）**で、ローカルの Codex・Claude Code・OpenCode の Token 使用量、Codex の週間上限、最近のタスク状況を確認できます。すべてのデータは Mac からのみ読み取られ、アップロードされることはありません。
+Codex Pulse は、Dock のそばにローカルの Codex、Claude Code、OpenCode の使用量とタスクアクティビティを表示する macOS 26+ のデスクトップアクセサリです。SwiftUI と AppKit で構築され、使用量データをアップロードしたり元の記録を変更したりせず、ローカルの記録を読み取ります。
 
 <p align="center">
   <a href="https://iwecon.github.io/CodexPulse/">
-    <img src="docs/assets/codex-pulse-preview.jpg" alt="Codex Pulse の製品プレビュー：macOS Dock の両側にある使用量概要パネルとタスクアクティビティパネル" width="1200">
+    <img src="docs/assets/codex-pulse-preview.jpg" alt="macOS Dock のそばに表示された Codex Pulse の使用量パネルとタスクパネル" width="1200">
   </a>
 </p>
 
-<p align="center">
-  <a href="https://iwecon.github.io/CodexPulse/">製品ページ</a>
-  ·
-  <a href="https://github.com/iwecon/CodexPulse/releases/latest">最新版をダウンロード</a>
-  ·
-  <a href="https://github.com/iwecon/CodexPulse">ソースを見る</a>
-</p>
-
-デスクトップブラウザ向けの製品ページには、テーマメニュー、ドラッグ可能なウインドウ、Activity Monitor のライブ指標、実際のアプリと同じ Dock パネル操作、明暗テーマに対応した本物のシステムアプリアイコンを備えたインタラクティブな macOS デスクトップデモがあります。幅 760px 以下では、縦長のモバイルレイアウトを維持します。
+[製品ページとインタラクティブデモ](https://iwecon.github.io/CodexPulse/) · [リリースをダウンロード](https://github.com/iwecon/CodexPulse/releases/latest)
 
 ## インストール
 
-Codex Pulse には macOS 26 以降が必要です。GitHub Actions が Apple シリコン（arm64）用と Intel（x86_64）用の DMG を個別にビルドし、各バージョンを [GitHub Releases](https://github.com/iwecon/CodexPulse/releases/latest) で公開します。
+macOS 26 以降では、Releases から Mac に合う DMG をダウンロードします。Apple シリコン向けは `Codex-Pulse-arm64.dmg`、Intel 向けは `Codex-Pulse-x86_64.dmg` です。DMG を開き、`Codex Pulse.app` を Applications にコピーします。
 
-### AI によるインストール支援
-
-次のプロンプトをそのままコーディングアシスタントに渡してください。
-
-```text
-From https://iwecon.github.io/CodexPulse/ to Install CodexPulse. Try Homebrew first, then npm, and finally download and install via the GitHub Release Page.
-```
-
-### Homebrew
-
-このリポジトリはカスタム Tap も兼ねています。
+Homebrew がインストールされていれば、このリポジトリの Tap を使えます。
 
 ```bash
 brew tap iwecon/codex-pulse https://github.com/iwecon/CodexPulse
 brew install --cask iwecon/codex-pulse/codex-pulse
 ```
 
-### npm
-
-npm パッケージには明示的なインストーラ CLI が含まれます。`npm install` の実行中に DMG を無断でマウントしたり、アプリケーションフォルダを変更したりしません。
+別のインストーラを使うには、Node.js 18+ と npm が必要です。
 
 ```bash
 npm install -g github:iwecon/CodexPulse
 codex-pulse install
+codex-pulse open
 ```
 
-既定のインストール先は `~/Applications/Codex Pulse.app` です。再インストールには `codex-pulse install --force`、起動には `codex-pulse open` を使えます。リポジトリに npm 公開用の認証情報を設定すると、`npm install -g @iwecon/codex-pulse` も利用できます。
+npm コマンドはどのディレクトリからでも実行できます。CLI だけをインストールしてもアプリはインストールされません。`codex-pulse install` はリリース DMG をダウンロードしてマウントし、アプリを `~/Applications/Codex Pulse.app` にコピーします。既存のインストールを置き換えるには `--force` を追加します。サポートされているコマンドは [インストーラー CLI](npm/bin/codex-pulse.js) を参照してください。
 
-### 署名について
+## パネルを使う
 
-現在の公開ビルドはアドホック署名で、Apple Developer ID による署名と公証はまだ行われていません。ダウンロード版を初めて開くとき、macOS が入手元の確認を表示することがあります。Developer ID と公証用の認証情報を設定すれば、リリースワークフローを完全な署名・公証手順へ移行できます。
+アプリには Dock アイコンがありません。透明なパネルはデスクトップアイコンより上、通常のアプリウインドウより下に留まり、Dock が下・左・右のどこにあっても追従し、複数の Spaces に対応します。
 
-## パネルの正式名称
+| パネル | 表示内容 |
+| --- | --- |
+| **Usage Overview Panel** (`用量概览面板`) | ローリング 14 日間の Token 使用傾向とツールごとの合計、利用可能な場合は Codex の週間クォータを表示します。その期間に使用量がないツールは自動的に非表示になります。 |
+| **Task Activity Panel** (`任务活动面板`) | 3 つすべてのツールのアクティブなタスクと最近のタスクを、プロジェクトとセッションごとにまとめ、ステータスインジケータと最新のユーザーメッセージを表示します。 |
 
-- **使用量概要パネル（Usage Overview Panel）**：Dock が画面下部にあるときは左側に表示され、直近 14 日間の Token 使用傾向と Codex の週間上限をまとめます。
-- **タスクアクティビティパネル（Task Activity Panel）**：Dock が画面下部にあるときは右側に表示され、実行中および最近完了した Codex、Claude Code、OpenCode のタスクをプロジェクトとセッション別に表示します。
+デフォルトでは、下部 Dock の左側に使用量、右側にタスクが表示されます。Dock が縦の場合は、使用量がタスクの上に表示されます。パネルを移動しても、これらの名前が表す役割は変わりません。
 
-これらは役割に基づく正式名称で、ドキュメント、要件、コードの議論で使用します。Dock が左端または右端にある場合、使用量概要パネルは上、タスクアクティビティパネルは下へ移動しますが、位置によって名称は変わりません。
+パネル内でポインタを半秒間止めると、コントロールが表示されます。リサイズ端をドラッグするかボタンを使って、パネルの移動と重なり順の変更ができます。Usage Overview Panel には言語選択、ツールごとのバー色、週間クォータの表示、Photos の壁紙アクセス許可もあります。Task Activity Panel にはテキスト配置と非表示ボタンがあります。設定はローカルに保存されます。インターフェースは簡体字中国語、香港・台湾の繁体字中国語、日本語、韓国語、英語に対応し、初期設定は簡体字中国語です。
 
-## 機能
+通常のコンテンツはクリックを通過します。Codex のセッションタイトルをクリックすると対応する ChatGPT の会話が開きます。Claude Code と OpenCode のタイトルはクリックを通過します。テキストは各パネル下の壁紙に合わせて変化します。サンプリングにはローカルのアセットだけを使い、画面キャプチャは行いません。Photos ライブラリの壁紙は既存のアクセス権を使い、コントロールから明示的に許可を求めた場合に限り許可を要求します。利用できない壁紙アセットは画像をダウンロードせず、システム外観にフォールバックします。
 
-- Codex（`~/.codex`）、Claude Code（`~/.claude/projects`）、OpenCode（`~/.local/share/opencode`）の Token 使用量を集計します。表示対象の 14 日間ウィンドウ内に使用量があるツールは自動的に表示され、未インストールまたは 14 日以上使用のないツールは設定なしで自動的に非表示になります。
-- 直近 14 日間の使用傾向を表示します。アクティブなツールが 1 つの場合は単色のトレンドを保ち、今日の日付の横に本日の Token 消費量を表示します。複数のツールがアクティブな場合、日ごとのバーはツール別に固定色相のセグメントを積み上げ（明度は壁紙適応テキストの極性に追従）、色付きドットの凡例に各ツールの 14 日間合計を表示します。
-- Codex の週間上限（ローカルに上限データを持つのは Codex のみで、Codex が 14 日間使用されていない間はこのセクションを非表示にします）、残りの割合、リセット時刻、残り時間に応じて精度が上がるカウントダウン（最後の 1 分は秒を表示）、正確な残り時間から算出した 1 日あたりの利用可能割合を表示します。
-- タスクアクティビティパネルは表示内容に応じて高さを調整し、高さの上限はありません。下から順に、Codex・Claude Code・OpenCode の実行中の全タスクと直近 10 分以内に完了したタスクをプロジェクトとセッション別に表示します。Claude Code と OpenCode には明示的なタスクイベントがないため、ローカルのセッション記録からターンの開始と終了を推定します。実行中のターンは、セッションデータが 12 分を超えて更新されない場合に中断とみなして削除します。実行中タスクは常にすべて表示され、完了タスクも 10 分の表示期間中はすべて表示されます。高さを理由に行が省略されることはありません。実行中タスクはグラデーションの尾を持つ回転リングで示します。ステータスアイコン（リングと完了チェックマーク）はセッションごとに着色され、各セッションは ID から安定した色相を導出するため、並行するセッションをひと目で見分けられます。追加・削除時の短いトランジションは「視差効果を減らす」設定に従います。完了後 3 分を過ぎるとメッセージのコントラストが下がり、10 分後に消えます。最新のユーザーメッセージは実際の 1〜2 行でコンパクトに表示します。
-- Dock が下、左、右のどこにあっても自動的に配置を調整します。
-- 両メインパネルの本文、セッション名、プロジェクト名は、一様な白文字と控えめな黒い影 1 つで描画します。主要・補助テキストの明るさの階層は維持します。パネルは完全に透明で画面をキャプチャせず、「画面収録」権限も不要です。
-- 各パネルは、その直下にあるデスクトップ壁紙の領域を別々にサンプリングし、その他のセマンティック外観要素の明暗を選びます。システム外観の切り替え時は代替外観を即座に適用し、壁紙の遷移後にキャッシュを破棄して個別領域のサンプリングへ戻ります。Space の切り替え、画面の復帰、ログインセッションの復帰時には壁紙ファイルと表示オプションを再確認し、状態が変化した場合だけ再サンプリングします。
-- パネルはデスクトップアイコンより上、通常のアプリウインドウより下にあり、アクティブなアプリを覆いません。
-- ポインタがいずれかのパネル内で 0.5 秒静止すると、内側のリサイズ辺に内容幅を覆う統合 Liquid Glass 横型コントロールが現れます。ポインタを動かすとタイマーが再開し、両パネルは同じフェードインを使います。ガラス面は連続角です。34px のリサイズ部分は内容側にあり、左パネルでは右寄せ、右パネルでは左寄せで、操作ボタンと同様に外側 6px の余白まで反応します。残りの操作領域は各ボタンが均等に埋めます。左パネルは左端を固定して右端から、右パネルはその逆方向からリサイズします。下部 Dock が高い場合は操作領域が上へ広がります。ポインタがパネルとコントロールの結合領域を離れると 1 秒後にフェードアウトし、戻った場合やドラッグ中は表示を保ちます。
-- 34px のリサイズ部分に入ると、他のボタンは 0.34 秒で 0.98 倍になりフェードアウトします。外側の Liquid Glass 背景は全幅を保ったまま 6px の余白を内側へ縮め、角を 10px に変えながら透明になります。アニメーション完了後に操作ウインドウをリサイズ部分まで縮めるため、透明部分がクリックを奪いません。リサイズ部分を離れただけでは元に戻らず、実際の操作ボタン領域へ入ると復元します。ドラッグ中はボタンを離すまでリサイズ部分だけを残します。
-- 左右移動ボタンは常に表示され、パネルを反対の論理側へ移せます。移動後はボタンの向きが反転します。2 枚のパネルが同じ側にある場合は上下交換ボタンも表示します。下部 Dock では論理側が左右、縦 Dock では上下に対応します。位置と各パネル幅は保存され、次回起動時に復元されます。現在の画面、Dock、利用可能領域に合わせて制限し、重なりを防ぎます。使用量概要パネルが論理右側にある場合は、傾向と週間上限のレイアウトも反転して右揃えになります。
-- タスクアクティビティパネルには、配置を自動・左・右の順に切り替える文字揃えボタンがあります。アイコンと選択内容も更新され、設定は保存されます。自動配置では論理左側で左揃え、右側で右揃えになり、右揃えでは所要時間が状態アイコンより前に移ります。
-- 使用量概要パネルには言語ボタンがあります。押すと操作領域が AppKit ネイティブの縦型ホイールピッカーに変わり、表示中の言語のクリック、押したまま上下へのドラッグ、マウスホイール、トラックパッドで即時に切り替えられます。中国本土の簡体字中国語、香港の繁体字中国語、台湾の繁体字中国語、日本語、韓国語、英語に対応します。選択は両パネル、日付書式、AppKit のアクセシビリティラベルとツールチップに反映され、ローカルの `UserDefaults` にのみ保存されます。初回起動時の既定値は中国本土の簡体字中国語です。
-- 使用量概要パネルのコントロールには配色ボタン（パレットアイコン）もあります。押すとフローティング設定ウインドウが開き、各プロダクトの使用量バーの色をカスタマイズできます。カスタム色は明暗どちらのパネル外観でも同じ固定色として適用され、積み上げトレンドの各セグメント、2 か所の凡例、単一プロダクトのトレンドバー、Codex の週間上限バーに反映されます。各プロダクトを個別に、またはすべてまとめてデフォルトに戻せます。選択はローカルの `UserDefaults` にのみ保存されます。
-- 通常のパネル内容はクリックを透過し、アプリをアクティブにしません。タスクアクティビティパネルの Codex セッション名はクリックでき、対応する会話を ChatGPT で開きます。Claude Code と OpenCode のセッション名はプレーンテキストとして表示され、クリックを透過します。独立した Liquid Glass コントロールはポインタ入力を受け付けます。
-- 非 Debug の `.app` は初回起動時にログイン時の起動を設定します。
+ローカルのクォータスナップショットを提供するのは Codex だけです。残りのクォータは、最新のアカウントレベルのレコードを使って `100 - used_percent` として求めます。フッターの週間 Token 合計は推定値です。計算は `tokens recorded in the quota window ÷ used_percent × 100` で、生の消費率を使います。公式の Token 利用可能量ではなく、他のデバイスやクラウドセッションのアクティビティが含まれない場合があります。入力がない、または無効な場合は使用済み分だけを表示します。説明を見るには週間クォータ表示コントロールにポインタを合わせてください。
 
-Codex の上限は、セッションログ内でイベント時刻が最新の `rate_limits` スナップショットから選択されます。古いセッションが現在の上限を上書きすることはなく、そのフィールドが実際にログに含まれる場合だけ表示されます。
+ログアクティビティが 3 分間ない Codex ターンは一時停止として表示され、最後のアクティビティから 10 分後に期限切れになります。新しいアクティビティで再開するのは、ログ出力がない状態から推定された一時停止だけです。完了したタスク、明示的に一時停止したタスク、終了したタスクは 10 分間残ります。Claude Code と OpenCode はローカル記録からターンを推定し、セッションが 12 分を超えて非アクティブな実行中ターンを削除します。そのため、長時間ログ出力のないツール呼び出しは一時的に一時停止と表示されたり、消えたりすることがあります。
 
-## リソース使用量
+非 Debug の `.app` は初回起動時にログイン時の起動を設定し、後からシステム設定で無効にした状態を尊重します。Debug ビルドと生の実行ファイル（`swift run` を含む）はログイン項目を変更しません。
 
-- 初回起動では既存の履歴を読み取ります。JSONL は固定サイズのチャンクで 1 行ずつ解析し、ログ全体を同時に `Data` と `String` に展開しません。
-- Codex と Claude Code の解析結果はファイルごとに、OpenCode はデータベース/WAL/SHM のバージョンごとにキャッシュされ、その後は新規または変更されたデータだけを解析します。
-- Codex と Claude Code のタスクログはバイトカーソルから増分読み取りされます。Codex タスクインデックスと OpenCode タスクの問い合わせは短時間キャッシュし、ポーリングごとの SQLite 問い合わせを避けます。
-- ユーザーセッションのロック中またはディスプレイのスリープ中は使用量とタスクの更新を停止し、実行中タスクのアニメーションも停止します。ロック解除と復帰後すぐに再開します。
-- 同じデータで SwiftUI の状態を再公開しません。カウントダウン、所要時間、アクティビティ表示は必要な最小のリーフビューだけを更新し、パネル全体の高頻度な再描画を避けます。
+## ローカルデータと更新
 
-ローカル履歴が多い場合、コールド起動では一時的にメモリ使用量が増えることがありますが、初回スキャン後は安定状態に戻るはずです。定期更新で履歴全体を再スキャンすることはありません。
+サポートされているツールを標準のローカルデータ場所で使っていれば、API キーやソースの設定は必要ありません。
 
-## 動作要件
+| ソース | 読み取るレコード |
+| --- | --- |
+| Codex の使用量 | `~/.codex/sessions/**/*.jsonl`, `~/.codex/archived_sessions/**/*.jsonl` |
+| Codex のタスクインデックス | `~/.codex/state_*.sqlite` と、そこから参照されるセッションログ |
+| Claude Code の使用量とタスク | `~/.claude/projects/**/*.jsonl` |
+| OpenCode の使用量とタスク | `~/.local/share/opencode/opencode.db`（WAL/SHM の変更検出を含む） |
 
-- macOS 26+
-- Xcode 26+ / Swift 6.2+
-- SQLite 3
+ソースがない、または読み取れない場合、そのツールだけが影響を受けます。使用量の集計は表示対象の 14 日間を対象とし、派生データはメモリ内だけに保持します。コールドスキャンでは関係するファイルと行を絞り込み、その後のスキャンではメモリ内の状態を再利用して追加や変更だけを処理します。JSONL はチャンク単位で読み取り、派生した使用量データベースやディスクキャッシュは作成しません。セッションが非アクティブな間やディスプレイがスリープ中は、使用量とタスクの更新、およびタスクステータスのアニメーションを停止します。両方の条件が解除されると再開します。
 
-## 実行
+### タスクアクティビティを非表示にして復元する
+
+コントロールで **タスクアクティビティパネルを非表示** を選び、復元するときは Usage Overview Panel で **タスクアクティビティパネルを表示** を選びます。非表示設定は起動後も保持され、タスク監視をキャンセルし、タスクを消去し、キャンセルされた読み取りが終了した後にタスク専用キャッシュを解放します。また、タスクビュー、リンク、コントロール、壁紙サンプリング領域も削除します。使用量スキャンは独立して動作し、同じログを読み取る場合があります。復元してもパネル設定は維持され、現在の記録をスキャンします。非表示中の時間も期限に算入されます。
+
+```mermaid
+flowchart TD
+    A[Launch or visibility change] --> B{Task panel hidden?}
+    B -->|Yes| C[Cancel task loop and invalidate generation]
+    C --> D[Clear tasks and release monitors and task views]
+    D --> E[Keep usage panel and restore control]
+    E -->|Show| B
+    B -->|No| F{Session active and display awake?}
+    F -->|No| G[Wait without polling]
+    G -->|Activation or wake| F
+    F -->|Yes| H[Create task monitors if needed and scan]
+    H --> I{Generation current and still allowed?}
+    I -->|Yes| J[Publish changed tasks and poll again]
+    J --> F
+    I -->|No| K[Discard result]
+```
+
+[UsageModel.swift](Sources/CodexPulse/UsageModel.swift) は更新の可否と世代管理を、[TaskMonitoringSession.swift](Sources/CodexPulse/TaskMonitoringSession.swift) は 3 つのタスク監視を管理します。非表示で起動した場合、タスク監視は開始されません。オブジェクトを解放しても、再利用可能なアロケータページがプロセスのフットプリントから直ちに消えるとは限りません。
+
+## 開発と検証
+
+macOS 26+、Xcode 26+ と選択した Swift 6.2+ ツールチェーン、システムの SQLite 3 ライブラリを使用してください。[Swift パッケージ](Package.swift) に外部パッケージ依存関係はありません。次のコマンドをリポジトリルートから実行します。
 
 ```bash
+swift build
 swift run "Codex Pulse"
-```
-
-アプリは Dock アイコンを表示しない accessory モードで動作します。`swift run`、その他の生の実行ファイル、Debug ビルドはログイン項目を読み取り、書き込み、設定しません。非 Debug の `.app` だけが macOS の `SMAppService` でログイン時の起動を設定します。
-
-ユーザーが「システム設定」でログイン項目を無効にした場合、以降の通常起動で強制的に再有効化しません。
-
-## リリース
-
-`v0.1.0` のようなタグをプッシュすると `.github/workflows/release.yml` が起動し、GitHub がホストする macOS 26 arm64 および Intel ランナーで次を個別にビルドします。
-
-- `Codex-Pulse-arm64.dmg`
-- `Codex-Pulse-x86_64.dmg`
-- `SHA256SUMS`
-
-続いて対応する GitHub Release を作成または更新します。リポジトリ変数 `PUBLISH_NPM=true` と npm 認証情報 `NPM_TOKEN` が設定されていれば、同じバージョンを `@iwecon/codex-pulse` としても公開します。
-
-## テスト
-
-```bash
 swift test
 ```
 
-テストは、ログ解析、日付処理、最新の Codex 上限の選択、タスク状態、数値の短縮表示、ログイン時起動の適格性、Dock パネルの配置とコントロール形状、ウインドウレベル、壁紙座標のマッピングと外観選択、壁紙キャッシュの無効化、ロック・スリープ時の更新状態切り替えを対象とします。
+Debug `.app` の場合は、リポジトリルートから `./script/build_and_run.sh` を使います。既存の `Codex Pulse` プロセスを停止し、`dist/Codex Pulse Debug.app` を再ビルドして起動します。このスクリプトは `--debug`、`--logs`、`--telemetry`、`--verify` にも対応しています。詳細は[スクリプト](script/build_and_run.sh)を参照してください。
 
-## データソース
+[テストスイート](Tests/CodexPulseTests) は、パーサー、増分スキャン、クォータ計算、タスクライフサイクル、パネルのジオメトリ、壁紙の動作、ローカライズ、ログイン時起動の適格性を対象とします。[AGENTS.md](AGENTS.md) にはプロジェクト固有の制約と、全スイートまたは UI・メモリチェックが必要になる変更が記載されています。
 
-- Codex 使用量：`~/.codex/sessions/**/*.jsonl` と `~/.codex/archived_sessions/**/*.jsonl`
-- Codex タスクインデックス：`~/.codex/state_*.sqlite`
-- Claude Code 使用量とタスク：`~/.claude/projects/**/*.jsonl`
-- OpenCode 使用量とタスク：`~/.local/share/opencode/opencode.db`
+ローカルセッションを対象に、オプトインで読み取り専用のタスクメモリチェックを行うには、リポジトリルートから次を実行します。
 
-ソースが存在しない、または読み取れない場合、そのツールだけが影響を受けます。Codex Pulse はデータをアップロードせず、元のセッション記録も変更しません。
+```bash
+CODEXPULSE_LOCAL_TASK_MEMORY=1 swift test --filter TaskMonitoringMemoryTests
+```
+
+通常のスイートではこのプローブをスキップします。3 回の表示切り替えサイクルで監視の解放と非表示中のポーリングを確認し、オブジェクトの寿命とは別に物理フットプリントを報告します。
+
+## コードナビゲーション
+
+| 領域 | エントリーポイント |
+| --- | --- |
+| アプリとパネルコントロール | [App.swift](Sources/CodexPulse/App.swift)、[DockPanelResizing.swift](Sources/CodexPulse/DockPanelResizing.swift)、[CodexSessionLink.swift](Sources/CodexPulse/CodexSessionLink.swift) |
+| 使用量の集計とモデル | [UsageScanner.swift](Sources/CodexPulse/UsageScanner.swift)、[Models.swift](Sources/CodexPulse/Models.swift) |
+| 更新とタスクライフサイクル | [UsageModel.swift](Sources/CodexPulse/UsageModel.swift)、[TaskMonitoringSession.swift](Sources/CodexPulse/TaskMonitoringSession.swift)、[RefreshActivityGate.swift](Sources/CodexPulse/RefreshActivityGate.swift) |
+| 壁紙の外観 | [WallpaperAppearance.swift](Sources/CodexPulse/WallpaperAppearance.swift)、[WallpaperSourceResolver.swift](Sources/CodexPulse/WallpaperSourceResolver.swift)、[AdaptiveTextColor.swift](Sources/CodexPulse/AdaptiveTextColor.swift) |
+| 設定と起動 | [AppLanguage.swift](Sources/CodexPulse/AppLanguage.swift)、[ToolBarColorSettings.swift](Sources/CodexPulse/ToolBarColorSettings.swift)、[LaunchAtLoginManager.swift](Sources/CodexPulse/LaunchAtLoginManager.swift) |
+| 製品サイトと配布 | [docs/index.html](docs/index.html)、[Homebrew cask](Casks/codex-pulse.rb)、[npm package](package.json)、[release workflow](.github/workflows/release.yml) |
+
+## パッケージとリリース
+
+ローカルでパッケージを作成するには、上記の開発要件を満たしたうえで、`arm64` または `x86_64` を選び、`X.Y.Z` を数値のバージョンに置き換えてリポジトリルートから次を実行します。
+
+```bash
+./script/package_release.sh --arch arm64 --version X.Y.Z --output dist
+```
+
+これはリリースアプリをビルドして `dist/Codex-Pulse-arm64.dmg` を書き出します。公開は行いません。ローカルパッケージはデフォルトでアドホック署名です。[パッケージスクリプト](script/package_release.sh) は Developer ID 署名用の `--signing-identity` と任意の `--signing-keychain` を受け付け、外部 SQLite ライブラリを含むシステム外の動的依存関係を拒否します。
+
+`vX.Y.Z` タグをプッシュするか、[リリースワークフロー](.github/workflows/release.yml) を手動でディスパッチすると、両アーキテクチャをビルドし、DMG と `SHA256SUMS` を含む公開 GitHub Release を作成または更新します。CI には署名、公証、チケットのステープル処理のため Developer ID Application 証明書/秘密鍵と App Store Connect API キーが必要です。正確なリポジトリシークレット名と検証手順はそのワークフローに定義されています。選別済みのノートは、存在する場合 `.github/release-notes/vX.Y.Z.md` から取得されます。npm の任意公開は `PUBLISH_NPM=true` と `NPM_TOKEN` で制御します。これらの操作は成果物を公開し、リリース認証情報が必要です。上記のコマンドはローカル開発とパッケージ作成だけを対象とします。

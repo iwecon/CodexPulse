@@ -9,111 +9,74 @@
   <a href="README.ko.md">한국어</a>
 </p>
 
-Codex Pulse is a private, local-first macOS desktop accessory built with SwiftUI and AppKit. Its **Usage Overview Panel** and **Task Activity Panel** sit beside the Dock to show local Codex, Claude Code, and OpenCode token usage, the Codex weekly quota, and recent task status. It reads everything from your Mac and uploads nothing.
+Codex Pulse is a macOS 26+ desktop accessory that shows local Codex, Claude Code, and OpenCode usage and task activity beside the Dock. Built with SwiftUI and AppKit, it reads local records without uploading usage data or modifying the originals.
 
 <p align="center">
   <a href="https://iwecon.github.io/CodexPulse/">
-    <img src="docs/assets/codex-pulse-preview.jpg" alt="Codex Pulse preview: the Usage Overview Panel and Task Activity Panel beside the macOS Dock" width="1200">
+    <img src="docs/assets/codex-pulse-preview.jpg" alt="Codex Pulse usage and task panels beside the macOS Dock" width="1200">
   </a>
 </p>
 
-<p align="center">
-  <a href="https://iwecon.github.io/CodexPulse/">Product page</a>
-  ·
-  <a href="https://github.com/iwecon/CodexPulse/releases/latest">Download the latest release</a>
-  ·
-  <a href="https://github.com/iwecon/CodexPulse">View source</a>
-</p>
-
-On desktop browsers, the product page includes an interactive macOS desktop demo with a theme menu, draggable windows, live Activity Monitor metrics, Dock-panel controls matching the app, and authentic system app icons adapted for light and dark themes. At widths of 760px and below, it retains the vertical mobile layout.
+[Product page and interactive demo](https://iwecon.github.io/CodexPulse/) · [Download releases](https://github.com/iwecon/CodexPulse/releases/latest)
 
 ## Install
 
-Codex Pulse requires macOS 26 or later. GitHub Actions builds separate DMGs for Apple silicon (arm64) and Intel (x86_64), published with each version on [GitHub Releases](https://github.com/iwecon/CodexPulse/releases/latest).
+On macOS 26 or later, download the DMG for your Mac from Releases: `Codex-Pulse-arm64.dmg` for Apple silicon or `Codex-Pulse-x86_64.dmg` for Intel. Open it and copy `Codex Pulse.app` to Applications.
 
-### AI-assisted install
-
-Give the following exact prompt to your coding assistant:
-
-```text
-From https://iwecon.github.io/CodexPulse/ to Install CodexPulse. Try Homebrew first, then npm, and finally download and install via the GitHub Release Page.
-```
-
-### Homebrew
-
-This repository also serves as a custom tap:
+With Homebrew installed, you can instead use this repository's tap:
 
 ```bash
 brew tap iwecon/codex-pulse https://github.com/iwecon/CodexPulse
 brew install --cask iwecon/codex-pulse/codex-pulse
 ```
 
-### npm
-
-The npm package provides an explicit installer CLI. It never mounts a DMG or changes your Applications folder silently during `npm install`:
+An alternative installer requires Node.js 18+ and npm:
 
 ```bash
 npm install -g github:iwecon/CodexPulse
 codex-pulse install
+codex-pulse open
 ```
 
-The default destination is `~/Applications/Codex Pulse.app`. Use `codex-pulse install --force` to reinstall, then `codex-pulse open` to launch the app.
+The npm commands work from any directory. Installing the CLI alone does not install the app; `codex-pulse install` downloads and mounts the release DMG and copies the app to `~/Applications/Codex Pulse.app`. Add `--force` to replace an existing installation. See the [installer CLI](npm/bin/codex-pulse.js) for its supported commands.
 
-Once npm publishing credentials are configured for this repository, the registry shorthand `npm install -g @iwecon/codex-pulse` is also available.
+## Use the panels
 
-### Signing
+The app has no Dock icon. Its transparent panels stay above desktop icons and below ordinary app windows, follow bottom, left, or right Dock placement, and support multiple Spaces.
 
-The GitHub release workflow requires a Developer ID Application certificate and private key plus an App Store Connect API key authorized for notarization. On each macOS runner, it imports the signing identity into a temporary keychain, signs the app with the hardened runtime and a secure timestamp, signs the DMG with a secure timestamp, and verifies both signatures. It then submits each architecture's DMG to Apple's notarization service, waits for acceptance, staples the ticket to the DMG, and validates the stapled ticket before uploading the artifact. Temporary signing and notarization credentials are removed even if the build fails.
+| Panel | What it shows |
+| --- | --- |
+| **Usage Overview Panel** (`用量概览面板`) | A rolling 14-day token trend and per-tool totals, plus the Codex weekly quota when available. Tools with no usage in that window are hidden automatically. |
+| **Task Activity Panel** (`任务活动面板`) | Active and recent tasks from all three tools, grouped by project and session, with status indicators and the latest user message. |
 
-The Apple account currently intended for releases, `1219i@sina.cn`, must first issue a **Developer ID Application** certificate and export it with its private key as a password-protected PKCS#12 (`.p12`) file. An App Store Connect API key must also be created and its `.p8` private key retained. A local Xcode login is not available to GitHub-hosted runners and does not configure CI credentials.
+By default, usage appears on the left and tasks on the right of a bottom Dock; with a vertical Dock, usage appears above tasks. These names describe responsibilities even after you move the panels.
 
-Configure these GitHub Actions repository secrets before running the release workflow:
+Hold the pointer still inside a panel for half a second to reveal its controls. Drag the resize edge or use the buttons to move panels and change their stacking order. The Usage Overview Panel also offers language selection, per-tool bar colors, weekly-quota visibility, and Photos wallpaper permission. The Task Activity Panel offers text alignment and a hide button. Preferences persist locally. The interface supports Simplified Chinese, Hong Kong and Taiwan Traditional Chinese, Japanese, Korean, and English; Simplified Chinese is the initial default.
 
-- `DEVELOPER_ID_APPLICATION_P12_BASE64`: base64 encoding of the exported `.p12` file.
-- `DEVELOPER_ID_APPLICATION_P12_PASSWORD`: password used when exporting the `.p12` file.
-- `APP_STORE_CONNECT_API_KEY_P8_BASE64`: base64 encoding of the App Store Connect API key's `.p8` file.
-- `APP_STORE_CONNECT_API_KEY_ID`: key ID for the App Store Connect API key.
-- `APP_STORE_CONNECT_API_ISSUER_ID`: issuer ID for the App Store Connect API key.
+Ordinary content is click-through. Codex session titles open the corresponding conversation in ChatGPT; Claude Code and OpenCode titles remain click-through. Text adapts to the wallpaper beneath each panel. Sampling uses local assets, never screen capture; Photos-library wallpapers use existing access unless you explicitly request permission through the control. Unavailable wallpaper assets fall back to system appearance without downloading images.
 
-The workflow fails with a clear error if a required secret is absent, the imported file does not contain a usable Developer ID Application identity, notarization is not accepted, or stapling validation fails.
+Only Codex provides local quota snapshots. Remaining quota is `100 - used_percent`, using the newest account-level record. The footer's weekly token total is an estimate: `tokens recorded in the quota window ÷ used_percent × 100`, using the raw consumed percentage. It is not an official token allowance and may omit activity from other devices or cloud sessions; missing or invalid inputs keep the used-only display. Hover the weekly-quota visibility control for the explanation.
 
-Local/manual packaging remains ad hoc by default. To sign explicitly, pass `--signing-identity` (preferably the identity's SHA-1) and, when the identity is isolated in a non-default keychain, `--signing-keychain` to `script/package_release.sh`.
+A Codex turn with no log activity for 3 minutes appears paused and expires 10 minutes after its last activity; new activity resumes only a silence-inferred pause. Completed, explicitly paused, and terminated tasks remain for 10 minutes. Claude Code and OpenCode infer turns from local records and drop running turns after more than 12 minutes of session inactivity. A long silent tool call can therefore temporarily look paused or disappear.
 
-## Panel terminology
+A non-Debug `.app` configures launch at login on first launch and respects later disabling in System Settings. Debug builds and raw executables, including `swift run`, leave login items untouched.
 
-- **Usage Overview Panel**: appears on the left when the Dock is at the bottom and summarizes the 14-day token-usage trend and Codex weekly quota.
-- **Task Activity Panel**: appears on the right when the Dock is at the bottom and shows active and recently completed Codex, Claude Code, and OpenCode tasks grouped by project and session.
+## Local data and refresh
 
-These are the canonical names used in documentation, requirements, and code discussions because they describe panel responsibilities. With a left or right Dock, the Usage Overview Panel moves above the Task Activity Panel; their identities never change with placement.
+No API key or source setup is needed beyond using the supported tools locally with their standard data locations:
 
-## Features
+| Source | Records read |
+| --- | --- |
+| Codex usage | `~/.codex/sessions/**/*.jsonl`, `~/.codex/archived_sessions/**/*.jsonl` |
+| Codex task index | `~/.codex/state_*.sqlite` and the session logs it references |
+| Claude Code usage and tasks | `~/.claude/projects/**/*.jsonl` |
+| OpenCode usage and tasks | `~/.local/share/opencode/opencode.db`, including WAL/SHM change detection |
 
-- Reads token usage from Codex (`~/.codex`), Claude Code (`~/.claude/projects`), and OpenCode (`~/.local/share/opencode`). A tool appears automatically while it has usage within the visible 14-day window; uninstalled or dormant tools stay hidden without any setting.
-- Shows a 14-day usage trend. With one active tool it keeps a single-color trend beside today's date and consumption; with several, each day's bar stacks per-tool segments in fixed hues whose lightness follows the wallpaper-adaptive text polarity, and a colored-dot legend shows each tool's 14-day total.
-- Shows the Codex weekly quota (local rate-limit data exists only for Codex; the section hides while Codex is dormant), remaining percentage, and a reset time that uses today/tomorrow when applicable. Regular-width panels retain hours and minutes, while narrow panels keep the compact date-only form. The remaining-time countdown says “Resets in {time}” (including in narrow panels) and keeps day/hour/minute detail, with a less-than-one-minute fallback; daily availability uses the exact time remaining until the final 24 hours, when it switches to the direct remaining-available percentage.
-- The Task Activity Panel dynamically fits visible content with no height cap. Starting from the bottom, it groups all active Codex, Claude Code, and OpenCode tasks and tasks completed, paused, or terminated within the last 10 minutes by project and session. Codex manual stops and paused goals show the pause symbol. A Codex turn with no log activity for 3 minutes is also shown as paused and disappears 10 minutes after its last activity; new log output restores a silence-inferred pause to running. Tool calls, output, usage events, and partial writes all count as activity. A long silent tool call can therefore temporarily look paused. A new turn closes any earlier unfinished turn in the same session using its last activity time. Claude Code and OpenCode write no explicit task events, so turn boundaries are inferred from their local session records; a running turn whose session data stays silent for over 12 minutes is treated as abandoned and removed. Every active task is always visible, and terminal tasks stay for their full 10-minute window — no row is dropped for height. Active tasks use a rotating ring with a gradient trail; completed, paused, and terminated tasks use matching static status symbols. Status indicators are colored per session, each session deriving a stable hue from its ID so concurrent sessions are distinguishable at a glance. Short transitions accompany task insertion and removal and respect Reduce Motion. Messages lose contrast after three terminal minutes and disappear after ten; the latest user message is compactly shown in its natural one or two lines.
-- Repositions automatically for bottom, left, and right Dock locations.
-- Each panel independently averages the desktop-wallpaper colors beneath its full region and chooses dark or light text with maximin APCA perceptual contrast (with a hysteresis band that keeps the previous polarity when both are perceptually equivalent). The concrete text color then continues the wallpaper's hue in OKLCh at near-black or near-white lightness, accepted only while it keeps a WCAG contrast ratio of at least 7:1 against every sampled candidate color; otherwise it interpolates toward pure black or white, which remains the fallback whenever the sampled colors are unavailable. AppKit session-title overlays follow the same computed color; the language picker sits on Liquid Glass and follows the semantic appearance. Text keeps one subtle opposite-color shadow and preserves the primary/secondary brightness hierarchy. Panels remain fully transparent, do not capture the screen, and require no Screen Recording permission.
-- Wallpaper averaging respects the desktop fit, fill, center, stretch, clipping, transparency, and fill-color settings. Per-screen solid wallpaper colors come directly from the current desktop options when available. If `NSWorkspace` does not expose a system color, the app reads the local wallpaper Store selection, normalizes names such as `dustyRose` to match the corresponding PNG in `/System/Library/Desktop Pictures/Solid Colors`, and averages that local asset as a whole-screen color — independent of the desktop image scaling geometry, since these swatches are far smaller than the screen — without maintaining a color-value table. The app watches the local wallpaper Store for changes, debounces updates, invalidates decoded assets, and keeps the existing five-second state check as a fallback. Source resolution is based on the Store selection schema rather than a growing list of wallpaper names: it handles solid colors, user pictures/photos, movies, downloaded Aerial assets, Sequoia, and local `.madesktop` descriptors used by system wallpapers such as Monterey, Big Sur, and Catalina. Appearance-driven dynamic wallpapers — non-solar `.madesktop` descriptors (hello, Big Sur, Monterey) and the Neptune/Sequoia dynamic styles — switch phases with the system appearance, so they resolve directly to the light or dark variant matching the current appearance. Only sources whose current phase is genuinely unknown (solar and other time-driven cycles) are evaluated across representative local candidates so the selected foreground stays readable throughout the cycle. Photos-library wallpapers (`com.apple.wallpaper.extension.photos`) carry only a PhotoKit asset identifier in the Store, so the app resolves the picture through PhotoKit: a small local thumbnail is requested with network access disabled, sampled with the placement geometry recorded in the Store (crop, fit, stretch, or center), and cached until the wallpaper changes. The app never triggers the system photo-library authorization prompt on its own — sampling only uses access that has already been granted, and otherwise quietly keeps the system-appearance fallback. Authorization is managed through a dedicated permission control in the Usage Overview Panel's hover control group: it explains why access is needed, notes when the current wallpaper does not require it, requests authorization only on the user's explicit action, and links to System Settings when access was previously declined. Granting access immediately resamples the wallpaper. Procedural renderers without a verified local representative image safely use the system-appearance fallback and never substitute a stale desktop URL. No assets are downloaded. A system appearance change applies an immediate fallback, then clears caches and restores independent regional sampling after the wallpaper transition. Space changes, display wake, and login-session restoration also re-check wallpaper files and display options.
-- Panels remain above desktop icons and below normal application windows, so they do not cover the active app.
-- After the pointer remains still inside either panel for 0.5 seconds, a unified horizontal Liquid Glass control group appears at the panel's inner resize edge; moving the pointer restarts the timer. Both panels use the same fade-in animation. All glass surfaces use continuous corners. The 34px resize segment sits inside the content edge—right-aligned in the left panel and left-aligned in the right panel—and, like the action buttons, responds through a 6px outer inset. Action buttons divide and fill the remaining region. The left panel keeps its left edge fixed and resizes from the right; the right panel does the reverse. With a tall bottom Dock, the interaction area extends upward. After the pointer leaves the combined panel-and-control region, the controls wait one second before fading; returning or actively dragging keeps them visible.
-- Entering the 34px resize segment scales the other buttons to 0.98 and fades them out over 0.34 seconds. The outer Liquid Glass background retains its full width while shrinking its 6px inset inward, transitions to a 10px corner radius, and fades to transparent. Only after the animation does the interaction window contract to the resize segment, preventing invisible click interception. Leaving the segment does not restore controls; entering an actual action-button region does. During dragging, only the resize segment remains until pointer release.
-- Left/right movement buttons are always present and move a panel to the other logical side; after moving, their direction reverses. When both panels occupy the same side, an additional vertical-swap button changes stacking order. Logical sides map to left/right with a bottom Dock and above/below with a vertical Dock. Panel positions and individual widths persist across launches and are clamped to the current display, Dock, and available space to prevent overlap. When the Usage Overview Panel is on the logical right, its trend and quota layouts mirror and right-align.
-- The Task Activity Panel control group includes a text-alignment button that cycles through automatic, left, and right alignment, updates its icon, and persists the choice. Automatic alignment is left on the logical left and right on the logical right. Right alignment also places the duration before the status icon.
-- The Usage Overview Panel control group includes a language button. It replaces the action area with a native AppKit vertical wheel picker that supports clicking visible languages, press-dragging, mouse-wheel scrolling, and trackpads. It supports Mainland Simplified Chinese, Hong Kong Traditional Chinese, Taiwan Traditional Chinese, Japanese, Korean, and English. The selection applies to both panels, date formats, and AppKit accessibility labels and tooltips, and is stored only in local `UserDefaults`. Mainland Simplified Chinese is the first-launch default.
-- The Usage Overview Panel control group also includes a color button (palette icon) that opens a floating settings window for customizing each product's usage-bar color. A custom color is a fixed override applied in both light and dark panel appearances and recolors the stacked trend segments, both legends, the single-product trend, and the Codex weekly-quota bar. Every product can be reset to its built-in adaptive color individually or all at once, and choices persist only in local `UserDefaults`.
-- Ordinary panel content stays click-through and does not activate the app. Codex session titles in the Task Activity Panel are clickable and open the matching conversation in ChatGPT; Claude Code and OpenCode session titles render as plain click-through text. The separate unified Liquid Glass controls still accept pointer input.
-- A non-Debug `.app` configures launch at login on first launch.
-
-The weekly-quota footer shows tokens used in the current quota window beside an estimated weekly total (`used tokens ÷ raw used percentage × 100`), for example `Used 20M / Est. 80M`. Narrow layouts use `20M / ≈80M` without adding a row. The estimate reflects the current usage mix, not a fixed official token allowance; local logs may omit other devices or cloud usage. Zero or invalid percentages, missing usage, and unrepresentable estimates retain the used-only display. Hover the weekly-quota visibility control for this explanation.
-
-Codex quota data is selected from the `rate_limits` snapshot with the newest event timestamp, preventing older sessions from replacing current limits. Quota appears only when a log actually contains that field.
+Missing or unreadable sources affect only the corresponding tool. Usage aggregation covers the visible 14-day window and keeps derived data in memory only. Cold scans filter relevant files and rows; subsequent scans reuse in-memory state and process additions or changes. JSONL reading is chunked, and no derived usage database or disk cache is created. Both usage and task refresh, along with task-status animation, pause while the session is inactive or displays are asleep; they resume when both conditions clear.
 
 ### Hide and restore task activity
 
-Use **Hide Task Activity Panel** in its hover controls. While hidden, **Show Task Activity Panel** appears in the Usage Overview Panel controls. The preference survives relaunch; widths, arrangement, and alignment are retained. Restoring the panel scans current records again, so hidden time still counts toward task expiry.
-
-Hiding cancels task monitoring for all three tools, clears displayed tasks, and releases the task monitors and their in-memory cursors, buffers, messages, and database query caches after cancelled reads exit. A one-time allocator pressure-relief request follows reader shutdown; allocator pages may remain reclaimable rather than immediately disappear from process memory. Task content, session-link windows, interaction controls, animations, and task-region wallpaper sampling are removed. The Usage Overview Panel continues its independent usage scan, which can still read the same source logs. No source files are changed or deleted.
+Choose **Hide Task Activity Panel** in its controls, then **Show Task Activity Panel** in the Usage Overview Panel to restore it. Hiding persists across launches, cancels task monitoring, clears tasks, and releases task-only caches after cancelled reads exit. It also removes task views, links, controls, and wallpaper sampling regions. Usage scanning stays independent and may still read the same logs. Restoring keeps panel preferences and scans current records; hidden time counts toward expiry.
 
 ```mermaid
 flowchart TD
@@ -132,60 +95,49 @@ flowchart TD
     I -->|No| K[Discard result]
 ```
 
-`UsageModel.swift` owns refresh eligibility and generations; `TaskMonitoringSession.swift` owns the three task monitors. `App.swift` coordinates panel visibility, links, and controls. A hidden launch never starts task monitoring.
+[UsageModel.swift](Sources/CodexPulse/UsageModel.swift) owns refresh eligibility and generations; [TaskMonitoringSession.swift](Sources/CodexPulse/TaskMonitoringSession.swift) owns the three task monitors. A hidden launch never starts task monitoring. Object release does not guarantee that reclaimable allocator pages immediately disappear from the process footprint.
 
-## Resource use
+## Develop and verify
 
-- Initial launch reads only source files and OpenCode rows that can contain activity inside the visible 14-day window. For Codex files that begin inside the window and have a complete tail, the scanner uses the built-in macOS `/usr/bin/grep` and `/usr/bin/awk` as a read-only streaming prefilter: ordinary session content never enters the app process, large turn contexts become compact model markers, and only `token_count` rows reach the narrow byte parser. An older JSONL file that is still being appended is line-aligned by timestamp and resumes at the first record inside the window instead of scanning its expired prefix; incomplete tails and changed files fall back to the regular fixed-size chunk reader. JSONL files are never expanded into whole-file `Data` and `String` values at once, and transient allocator pages are reclaimed in bounded batches during large cold scans.
-- Usage scanning creates no derived on-disk cache and never imports session content. While the app is running, it keeps only recent usage records, per-file byte cursors and minimal Codex cumulative-token state in memory; records and inactive cursors leave memory as they roll past day 14.
-- Unchanged Codex and Claude Code files are not reopened. Continuously appended files resume after the last complete JSONL line; truncation or replacement rebuilds only that file. Codex fully decodes only in-window `token_count` records; its one-time session identity and model fields are extracted directly without deserializing large metadata/context records. OpenCode watches the database plus WAL/SHM companions, lists only recent row versions, and decodes JSON only for new or updated rows.
-- Codex and Claude Code task logs are read incrementally from byte cursors. Codex searches only newly appended bytes for line endings and streams past recognized long non-task records, retaining activity timestamps without assembling full tool output. Codex task-index and OpenCode task queries are briefly cached to avoid querying SQLite on every poll.
-- Usage and task refreshes pause while the user session is locked or the display sleeps, and active-task animations freeze for the full interval. They resume immediately after unlock and wake.
-- Equivalent data does not republish SwiftUI state. Countdown, duration, and activity updates are isolated to their smallest leaf views rather than redrawing a whole panel at high frequency.
-
-Cold-launch work and steady-state memory are bounded by the most recent 14 days of activity rather than lifetime history. Periodic refreshes read only newly appended JSONL bytes and new or updated recent OpenCode rows.
-
-## Requirements
-
-- macOS 26+
-- Xcode 26+ / Swift 6.2+
-- SQLite 3 provided by macOS (release artifacts must not link Homebrew or other external SQLite libraries)
-
-## Run
+Use macOS 26+, Xcode 26+ with a selected Swift 6.2+ toolchain, and the system SQLite 3 library. The [Swift package](Package.swift) has no external package dependencies. Run these commands from the repository root:
 
 ```bash
+swift build
 swift run "Codex Pulse"
-```
-
-The app runs as an accessory without a Dock icon. `swift run`, other raw executables, and Debug builds never read, write, or configure login items. Only a non-Debug `.app` uses macOS `SMAppService` to configure launch at login.
-
-If the user disables the login item in System Settings, the app does not force-enable it during later ordinary launches.
-
-## Release
-
-Pushing a tag such as `v0.1.0` triggers `.github/workflows/release.yml`, which builds on GitHub-hosted macOS 26 arm64 and Intel runners:
-
-- `Codex-Pulse-arm64.dmg`
-- `Codex-Pulse-x86_64.dmg`
-- `SHA256SUMS`
-
-Each build requires the Developer ID and App Store Connect API key secrets described under [Signing](#signing). Each architecture's signed DMG is notarized, stapled, and validated before artifact upload. The workflow then creates or updates the corresponding GitHub Release, using `.github/release-notes/vX.Y.Z.md` when that version has curated notes and falling back to generated notes otherwise. If repository variable `PUBLISH_NPM=true` and npm credential `NPM_TOKEN` are configured, the same version is also published as `@iwecon/codex-pulse`.
-
-## Test
-
-```bash
 swift test
 ```
 
-Tests cover log parsing, date handling, newest Codex quota selection, task state, compact number formatting, launch-at-login eligibility, Dock panel arrangement and control geometry, window levels, wallpaper coordinate mapping and semantic appearance, wallpaper cache invalidation, and refresh-state transitions during lock and sleep.
+For a Debug `.app`, use `./script/build_and_run.sh` from the repository root. It stops an existing `Codex Pulse` process, rebuilds `dist/Codex Pulse Debug.app`, and launches it. The script also supports `--debug`, `--logs`, `--telemetry`, and `--verify`; see [the script](script/build_and_run.sh) for details.
 
-## Data sources
+The [test suite](Tests/CodexPulseTests) covers parsers, incremental scans, quota calculations, task lifecycle, panel geometry, wallpaper behavior, localization, and login eligibility. [AGENTS.md](AGENTS.md) records project-specific constraints and the changes that require the full suite or UI and memory checks.
 
-- Codex usage: `~/.codex/sessions/**/*.jsonl` and `~/.codex/archived_sessions/**/*.jsonl`
-- Codex task index: `~/.codex/state_*.sqlite`
-- Claude Code usage and tasks: `~/.claude/projects/**/*.jsonl`
-- OpenCode usage and tasks: `~/.local/share/opencode/opencode.db`
+For an opt-in, read-only task-memory check against your local sessions, run this from the repository root:
 
-If a source is missing or cannot be read, only that tool is affected. Codex Pulse never uploads data or modifies original session records.
+```bash
+CODEXPULSE_LOCAL_TASK_MEMORY=1 swift test --filter TaskMonitoringMemoryTests
+```
 
-For an opt-in task-memory check using real local data, run `CODEXPULSE_LOCAL_TASK_MEMORY=1 swift test --filter TaskMonitoringMemoryTests` from the repository root. It reads local task sources, checks monitor release and the absence of hidden polling over three visibility cycles, and reports Mach physical footprint separately from object lifetime. The ordinary test suite skips this probe.
+The ordinary suite skips this probe. It checks monitor release and hidden polling over three visibility cycles and reports physical footprint separately from object lifetime.
+
+## Code navigation
+
+| Area | Entry points |
+| --- | --- |
+| App and panel controls | [App.swift](Sources/CodexPulse/App.swift), [DockPanelResizing.swift](Sources/CodexPulse/DockPanelResizing.swift), [CodexSessionLink.swift](Sources/CodexPulse/CodexSessionLink.swift) |
+| Usage aggregation and models | [UsageScanner.swift](Sources/CodexPulse/UsageScanner.swift), [Models.swift](Sources/CodexPulse/Models.swift) |
+| Refresh and task lifecycle | [UsageModel.swift](Sources/CodexPulse/UsageModel.swift), [TaskMonitoringSession.swift](Sources/CodexPulse/TaskMonitoringSession.swift), [RefreshActivityGate.swift](Sources/CodexPulse/RefreshActivityGate.swift) |
+| Wallpaper appearance | [WallpaperAppearance.swift](Sources/CodexPulse/WallpaperAppearance.swift), [WallpaperSourceResolver.swift](Sources/CodexPulse/WallpaperSourceResolver.swift), [AdaptiveTextColor.swift](Sources/CodexPulse/AdaptiveTextColor.swift) |
+| Preferences and startup | [AppLanguage.swift](Sources/CodexPulse/AppLanguage.swift), [ToolBarColorSettings.swift](Sources/CodexPulse/ToolBarColorSettings.swift), [LaunchAtLoginManager.swift](Sources/CodexPulse/LaunchAtLoginManager.swift) |
+| Product site and distribution | [docs/index.html](docs/index.html), [Homebrew cask](Casks/codex-pulse.rb), [npm package](package.json), [release workflow](.github/workflows/release.yml) |
+
+## Package and release
+
+For local packaging, run this from the repository root with the development prerequisites above, choosing `arm64` or `x86_64` and replacing `X.Y.Z` with a numeric version:
+
+```bash
+./script/package_release.sh --arch arm64 --version X.Y.Z --output dist
+```
+
+This builds a release app and writes `dist/Codex-Pulse-arm64.dmg`; it does not publish it. Local packaging defaults to ad hoc signing. The [packaging script](script/package_release.sh) accepts `--signing-identity` and optional `--signing-keychain` for Developer ID signing and rejects non-system dynamic dependencies, including external SQLite libraries.
+
+Pushing a `vX.Y.Z` tag or manually dispatching the [release workflow](.github/workflows/release.yml) builds both architectures and creates or updates a public GitHub Release with DMGs and `SHA256SUMS`. CI requires a Developer ID Application certificate/private key and an App Store Connect API key for signing, notarization, and stapling; the exact repository secret names and validation steps are defined in that workflow. Curated notes come from `.github/release-notes/vX.Y.Z.md` when present. Optional npm publication is controlled by `PUBLISH_NPM=true` and `NPM_TOKEN`. These operations publish artifacts and require release credentials; the commands above only cover local development and packaging.
