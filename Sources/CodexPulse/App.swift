@@ -175,6 +175,11 @@ final class DockPanelController {
                     + "\n" + languageSettings.language.weeklyTokenEstimateHelp
             )
         },
+        weeklyQuotaPositionPresentation: { [weak self] identity in
+            guard identity == .usageOverview, let self, !hidesWeeklyLimit,
+                  model.snapshot.weeklyLimitWindow != nil else { return nil }
+            return presentationState.weeklyQuotaPosition.controlPresentation(language: languageSettings.language)
+        },
         usageLegendItems: { [weak self] identity in
             guard identity == .usageOverview, let self else { return [] }
             let tools = model.snapshot.activeTools
@@ -210,6 +215,9 @@ final class DockPanelController {
         },
         onToggleWeeklyLimitVisibility: { [weak self] identity in
             self?.toggleWeeklyLimitVisibility(for: identity)
+        },
+        onCycleWeeklyQuotaPosition: { [weak self] identity in
+            self?.cycleWeeklyQuotaPosition(for: identity)
         },
         onManagePermissions: { [weak self] _ in
             self?.managePhotoLibraryPermission()
@@ -250,6 +258,7 @@ final class DockPanelController {
         presentationState.taskSide = preferences.arrangement.taskSide
         presentationState.taskActivityTextAlignment = preferences.taskActivityTextAlignment
         presentationState.hidesWeeklyLimit = preferences.hidesWeeklyLimit
+        presentationState.weeklyQuotaPosition = preferences.weeklyQuotaPosition
         self.presentationState = presentationState
         leftPanel = Self.panel(
             rootView: AnyView(RecentUsageView(
@@ -309,6 +318,7 @@ final class DockPanelController {
             MainActor.assumeIsolated { self?.positionPanels() }
         }
         observeTaskChanges()
+        observeUsageLayoutChanges()
         observeBarColorChanges()
         positionPanels()
         leftPanel.orderFrontRegardless()
@@ -375,6 +385,9 @@ final class DockPanelController {
         let inset: CGFloat = 2
         let gap: CGFloat = 10
         let dockFrame = edge == .bottom || edge == .unknown ? bottomDockFrame(on: screen) : nil
+        let usageHeight = presentationState.weeklyQuotaPosition.panelHeight(
+            showsQuota: model.hasLoadedSnapshot && !hidesWeeklyLimit && model.snapshot.weeklyLimitWindow != nil
+        )
         let provisionalPlan = TaskExecutionLayout.plan(for: model.tasks, panelWidth: rightPanel.frame.width)
         let provisionalFrames = DockPanelPlacementGeometry.frames(
             screenFrame: frame,
@@ -385,7 +398,7 @@ final class DockPanelController {
             sizes: .init(
                 usagePreferredWidth: usageOverviewPreferredWidth,
                 taskPreferredWidth: taskActivityPreferredWidth,
-                usageHeight: leftPanel.frame.height,
+                usageHeight: usageHeight,
                 taskHeight: model.isTaskActivityHidden ? rightPanel.frame.height : provisionalPlan.panelHeight
             ),
             inset: inset,
@@ -402,7 +415,7 @@ final class DockPanelController {
             sizes: .init(
                 usagePreferredWidth: usageOverviewPreferredWidth,
                 taskPreferredWidth: taskActivityPreferredWidth,
-                usageHeight: leftPanel.frame.height,
+                usageHeight: usageHeight,
                 taskHeight: model.isTaskActivityHidden ? rightPanel.frame.height : taskPlan.panelHeight
             ),
             inset: inset,
@@ -711,6 +724,20 @@ final class DockPanelController {
         return CFUUIDCreateString(nil, unmanagedUUID.takeRetainedValue()) as String
     }
 
+    private func observeUsageLayoutChanges() {
+        withObservationTracking {
+            _ = model.hasLoadedSnapshot
+            _ = model.snapshot.weeklyLimitWindow
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                positionPanels()
+                resizeController.refreshVisibleOverlay()
+                observeUsageLayoutChanges()
+            }
+        }
+    }
+
     private func observeTaskChanges() {
         withObservationTracking {
             _ = model.tasks
@@ -802,6 +829,15 @@ final class DockPanelController {
         hidesWeeklyLimit.toggle()
         presentationState.hidesWeeklyLimit = hidesWeeklyLimit
         savePreferences()
+        positionPanels()
+    }
+
+    private func cycleWeeklyQuotaPosition(for identity: DockPanelIdentity) {
+        guard identity == .usageOverview, !hidesWeeklyLimit,
+              model.snapshot.weeklyLimitWindow != nil else { return }
+        presentationState.weeklyQuotaPosition = presentationState.weeklyQuotaPosition.next
+        savePreferences()
+        positionPanels()
     }
 
     private func savePreferences() {
@@ -810,7 +846,8 @@ final class DockPanelController {
             usageOverviewPreferredWidth: usageOverviewPreferredWidth,
             taskActivityPreferredWidth: taskActivityPreferredWidth,
             taskActivityTextAlignment: taskActivityTextAlignment,
-            hidesWeeklyLimit: hidesWeeklyLimit
+            hidesWeeklyLimit: hidesWeeklyLimit,
+            weeklyQuotaPosition: presentationState.weeklyQuotaPosition
         ).save(to: defaults)
     }
 
@@ -934,30 +971,18 @@ struct RecentUsageView: View {
     }
 
     private var loadedContent: some View {
-        HStack(spacing: 6) {
-            if presentation.usageSide == .left {
-                trendView
-                if showsWeeklyLimit {
-                    Divider().frame(height: 24)
-                    WeeklyLimitView(
-                        model: model,
-                        alignTrailing: false,
-                        quotaBarColor: barColor(for: .codex),
-                        languageSettings: languageSettings
-                    )
-                }
-            } else {
-                if showsWeeklyLimit {
-                    WeeklyLimitView(
-                        model: model,
-                        alignTrailing: true,
-                        quotaBarColor: barColor(for: .codex),
-                        languageSettings: languageSettings
-                    )
-                    Divider().frame(height: 24)
-                }
-                trendView
-            }
+        WeeklyQuotaLayoutView(
+            position: presentation.weeklyQuotaPosition,
+            showsQuota: showsWeeklyLimit
+        ) {
+            trendView
+        } quota: {
+            WeeklyLimitView(
+                model: model,
+                alignTrailing: presentation.usageSide == .right,
+                quotaBarColor: barColor(for: .codex),
+                languageSettings: languageSettings
+            )
         }
     }
 

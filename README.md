@@ -53,6 +53,10 @@ The app has no Dock icon. Its transparent panels stay above desktop icons and be
 
 By default, usage appears on the left and tasks on the right of a bottom Dock; with a vertical Dock, usage appears above tasks. These names describe responsibilities even after you move the panels.
 
+When a bottom Dock leaves too little room for a panel’s preferred width, that side’s panels automatically move above the Dock, keeping their side and stacking order. They return beside the Dock when space becomes available again.
+
+The weekly quota defaults to the right of usage. Its position button cycles through right, above, below, and left; the choice is saved independently of the panel’s screen position. Above/below layouts expand the panel vertically. Hiding the quota or losing quota data collapses that extra space and hides the position button.
+
 Hold the pointer still inside a panel for half a second to reveal its controls. Drag the resize edge or use the buttons to move panels and change their stacking order. The Usage Overview Panel also offers language selection, per-tool bar colors, weekly-quota visibility, and Photos wallpaper permission. The Task Activity Panel offers text alignment and a hide button. Preferences persist locally. The interface supports Simplified Chinese, Hong Kong and Taiwan Traditional Chinese, Japanese, Korean, and English; Simplified Chinese is the initial default.
 
 Ordinary content is click-through. Codex session titles open the corresponding conversation in ChatGPT; Claude Code and OpenCode titles remain click-through. Text adapts to the wallpaper beneath each panel. Sampling uses local assets, never screen capture; Photos-library wallpapers use existing access unless you explicitly request permission through the control. Unavailable wallpaper assets fall back to system appearance without downloading images.

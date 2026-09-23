@@ -318,7 +318,7 @@ import Testing
 
 @Test func interactionActionsFillPaddedAreaAndMirrorForSupportedCounts() {
     for side in PanelSide.allCases {
-        for count in 1...3 {
+        for count in 1...8 {
             let bounds = CGRect(
                 x: 0,
                 y: 0,
@@ -339,7 +339,8 @@ import Testing
             let actionRegionMinX = side == .left ? bounds.minX : resize.maxX
             let actionRegionMaxX = side == .left ? resize.minX : bounds.maxX
             #expect(actions.first?.minX == actionRegionMinX + (side == .left ? DockPanelOverlayGeometry.controlPadding : 0))
-            #expect(actions.last?.maxX == actionRegionMaxX - (side == .right ? DockPanelOverlayGeometry.controlPadding : 0))
+            let expectedMaxX = actionRegionMaxX - (side == .right ? DockPanelOverlayGeometry.controlPadding : 0)
+            #expect(abs((actions.last?.maxX ?? .infinity) - expectedMaxX) < 0.001)
             #expect(DockPanelOverlayGeometry.actionSurfacesContain(
                 CGPoint(x: actions[0].midX, y: actions[0].midY),
                 in: bounds,
@@ -575,6 +576,94 @@ import Testing
     #expect(task.minX >= dock.maxX + 10)
     #expect(usage.minX == screen.minX + 2)
     #expect(task.maxX == screen.maxX - 2)
+}
+
+@Test func wideBottomDockMovesPanelsAboveDockAndPreservesArrangement() throws {
+    for origin in [CGPoint.zero, CGPoint(x: -1_500, y: 200)] {
+        let screen = CGRect(origin: origin, size: CGSize(width: 1_200, height: 900))
+        let dock = CGRect(x: screen.minX + 80, y: screen.minY + 4, width: 1_040, height: 96)
+        for edge in [DockEdge.bottom, .unknown] {
+            for usageSide in PanelSide.allCases {
+                for taskSide in PanelSide.allCases {
+                    for order in PanelVerticalOrder.allCases {
+                        let frames = DockPanelPlacementGeometry.frames(
+                            screenFrame: screen,
+                            visibleFrame: screen,
+                            dockFrame: dock,
+                            dockEdge: edge,
+                            arrangement: PanelArrangement(
+                                usageSide: usageSide, taskSide: taskSide, verticalOrder: order
+                            ),
+                            sizes: .init(usagePreferredWidth: 350, taskPreferredWidth: 420,
+                                         usageHeight: 56, taskHeight: 180),
+                            inset: 2,
+                            gap: 10
+                        )
+                        let usage = try #require(frames[.usageOverview])
+                        let task = try #require(frames[.taskActivity])
+                        #expect(usage.width == 350)
+                        #expect(task.width == 420)
+                        #expect(!usage.intersects(task))
+                        for (frame, side) in [(usage, usageSide), (task, taskSide)] {
+                            #expect(frame.minY >= dock.maxY + 10)
+                            #expect(screen.insetBy(dx: 2, dy: 2).contains(frame))
+                            #expect(side == .left ? frame.minX == screen.minX + 2 : frame.maxX == screen.maxX - 2)
+                            let overlay = DockPanelOverlayGeometry.expandedFrame(
+                                parentFrame: frame, side: side,
+                                metrics: .init(screenFrame: screen, dockFrame: dock, dockEdge: edge)
+                            )
+                            #expect(!overlay.intersects(dock))
+                        }
+                        if usageSide == taskSide {
+                            #expect(order == .usageAboveTask
+                                    ? usage.minY == task.maxY + 10
+                                    : task.minY == usage.maxY + 10)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Test func bottomDockFallbackIsPerSideAndRestoresAtPreferredWidth() throws {
+    let screen = CGRect(x: 0, y: 0, width: 1_500, height: 1_000)
+    for leftSpace in [349.0, 350.0, 351.0] {
+        let dock = CGRect(x: leftSpace + 12, y: 4, width: 500, height: 66)
+        let frames = DockPanelPlacementGeometry.frames(
+            screenFrame: screen, visibleFrame: screen, dockFrame: dock, dockEdge: .bottom,
+            arrangement: PanelArrangement(),
+            sizes: .init(usagePreferredWidth: 350, taskPreferredWidth: 420, usageHeight: 56, taskHeight: 120),
+            inset: 2, gap: 10
+        )
+        let usage = try #require(frames[.usageOverview])
+        let task = try #require(frames[.taskActivity])
+        #expect(usage.width == 350)
+        #expect(usage.minY == (leftSpace < 350 ? dock.maxY + 10 : dock.minY))
+        #expect(task.minY == dock.minY)
+        #expect(task.width == 420)
+        #expect(!usage.intersects(task))
+    }
+}
+
+@Test func aboveDockSlotsKeepOversizedPanelsSeparateOnSmallScreens() throws {
+    let screen = CGRect(x: 0, y: 0, width: 600, height: 800)
+    let dock = CGRect(x: 20, y: 4, width: 560, height: 90)
+    let frames = DockPanelPlacementGeometry.frames(
+        screenFrame: screen, visibleFrame: screen, dockFrame: dock, dockEdge: .bottom,
+        arrangement: PanelArrangement(),
+        sizes: .init(usagePreferredWidth: 900, taskPreferredWidth: 800, usageHeight: 56, taskHeight: 120),
+        inset: 2, gap: 10
+    )
+    let usage = try #require(frames[.usageOverview])
+    let task = try #require(frames[.taskActivity])
+    #expect(usage.width >= DockPanelWidthGeometry.minimumPreferredWidth)
+    #expect(task.width >= DockPanelWidthGeometry.minimumPreferredWidth)
+    #expect(usage.maxX + 10 <= task.minX)
+    #expect(usage.minY == dock.maxY + 10)
+    #expect(task.minY == dock.maxY + 10)
+    #expect(screen.contains(usage))
+    #expect(screen.contains(task))
 }
 
 @Test func verticalDockPlacementKeepsPanelsBesideDockWithSideBasedResizeEdges() throws {

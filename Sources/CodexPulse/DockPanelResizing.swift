@@ -128,6 +128,7 @@ struct DockPanelPreferences: Equatable {
         static let taskPreferredWidth = "dockPanels.taskActivity.preferredWidth"
         static let taskTextAlignment = "dockPanels.taskActivity.textAlignment"
         static let hidesWeeklyLimit = "dockPanels.usageOverview.hidesWeeklyLimit"
+        static let weeklyQuotaPosition = "dockPanels.usageOverview.weeklyQuotaPosition"
     }
 
     var arrangement: PanelArrangement
@@ -135,19 +136,22 @@ struct DockPanelPreferences: Equatable {
     var taskActivityPreferredWidth: CGFloat
     var taskActivityTextAlignment: TaskActivityTextAlignment
     var hidesWeeklyLimit: Bool
+    var weeklyQuotaPosition: WeeklyQuotaPosition
 
     init(
         arrangement: PanelArrangement = PanelArrangement(),
         usageOverviewPreferredWidth: CGFloat = DockPanelWidthGeometry.defaultWidth,
         taskActivityPreferredWidth: CGFloat = DockPanelWidthGeometry.defaultWidth,
         taskActivityTextAlignment: TaskActivityTextAlignment = .auto,
-        hidesWeeklyLimit: Bool = false
+        hidesWeeklyLimit: Bool = false,
+        weeklyQuotaPosition: WeeklyQuotaPosition = .right
     ) {
         self.arrangement = arrangement
         self.usageOverviewPreferredWidth = usageOverviewPreferredWidth
         self.taskActivityPreferredWidth = taskActivityPreferredWidth
         self.taskActivityTextAlignment = taskActivityTextAlignment
         self.hidesWeeklyLimit = hidesWeeklyLimit
+        self.weeklyQuotaPosition = weeklyQuotaPosition
     }
 
     init(defaults: UserDefaults) {
@@ -168,6 +172,8 @@ struct DockPanelPreferences: Equatable {
             .flatMap(TaskActivityTextAlignment.init(rawValue:))
             ?? .auto
         hidesWeeklyLimit = defaults.bool(forKey: Key.hidesWeeklyLimit)
+        weeklyQuotaPosition = defaults.string(forKey: Key.weeklyQuotaPosition)
+            .flatMap(WeeklyQuotaPosition.init(rawValue:)) ?? .right
     }
 
     func save(to defaults: UserDefaults) {
@@ -178,6 +184,7 @@ struct DockPanelPreferences: Equatable {
         defaults.set(Double(taskActivityPreferredWidth), forKey: Key.taskPreferredWidth)
         defaults.set(taskActivityTextAlignment.rawValue, forKey: Key.taskTextAlignment)
         defaults.set(hidesWeeklyLimit, forKey: Key.hidesWeeklyLimit)
+        defaults.set(weeklyQuotaPosition.rawValue, forKey: Key.weeklyQuotaPosition)
     }
 
     private static func side(_ value: String?) -> PanelSide? {
@@ -229,6 +236,7 @@ final class DockPanelPresentationState {
     var taskSide: PanelSide = .right
     var taskActivityTextAlignment: TaskActivityTextAlignment = .auto
     var hidesWeeklyLimit = false
+    var weeklyQuotaPosition: WeeklyQuotaPosition = .right
     var usageAppearance: PanelSemanticAppearance = .dark
     var taskAppearance: PanelSemanticAppearance = .dark
     /// Wallpaper-derived text colors; nil falls back to the semantic
@@ -317,17 +325,39 @@ struct DockPanelPlacementGeometry {
         let center = screenFrame.midX
         let leftMaximum = dockFrame?.minX ?? center - gap / 2
         let rightMinimum = dockFrame?.maxX ?? center + gap / 2
-        let slots: [PanelSide: ClosedRange<CGFloat>] = [
+        var slots: [PanelSide: ClosedRange<CGFloat>] = [
             .left: (screenFrame.minX + inset)...max(screenFrame.minX + inset + 1, leftMaximum - gap),
             .right: min(screenFrame.maxX - inset - 1, rightMinimum + gap)...(screenFrame.maxX - inset)
         ]
         let lowerY = bottomEdge(dockFrame: dockFrame, screenFrame: screenFrame, fallbackInset: inset)
+        var splitY: [PanelSide: CGFloat] = [.left: lowerY, .right: lowerY]
+        if let dockFrame {
+            // Use the screen halves above the Dock instead of squeezing content
+            // into narrow side gaps. Keep the saved arrangement and widths intact.
+            for side in PanelSide.allCases {
+                let preferredWidth = DockPanelIdentity.allCases
+                    .filter { arrangement.side(for: $0) == side }
+                    .map { $0 == .usageOverview ? sizes.usagePreferredWidth : sizes.taskPreferredWidth }
+                    .max()
+                guard let preferredWidth, let slot = slots[side],
+                      slot.upperBound - slot.lowerBound < max(DockPanelWidthGeometry.minimumPreferredWidth, preferredWidth) else {
+                    continue
+                }
+                switch side {
+                case .left:
+                    slots[side] = (screenFrame.minX + inset)...max(screenFrame.minX + inset + 1, center - gap / 2)
+                case .right:
+                    slots[side] = min(screenFrame.maxX - inset - 1, center + gap / 2)...(screenFrame.maxX - inset)
+                }
+                splitY[side] = dockFrame.maxY + gap
+            }
+        }
         return makeFrames(
             screenFrame: screenFrame,
             arrangement: arrangement,
             sizes: sizes,
             slots: slots,
-            splitY: [.left: lowerY, .right: lowerY],
+            splitY: splitY,
             colocatedAnchor: { _ in .bottom },
             inset: inset,
             gap: gap
@@ -410,7 +440,7 @@ struct DockPanelPlacementGeometry {
         let side = arrangement.usageSide
         let groupMinY = colocatedAnchor(side) == .top
             ? screenFrame.maxY - inset - groupHeight
-            : screenFrame.minY + inset
+            : max(screenFrame.minY + inset, splitY[side] ?? screenFrame.minY + inset)
         let lowerHeight = arrangement.verticalOrder == .usageAboveTask ? task.height : usage.height
         if arrangement.verticalOrder == .usageAboveTask {
             task.origin.y = groupMinY
@@ -697,6 +727,7 @@ final class DockPanelResizeController {
     private let taskTextAlignmentPresentation: OptionalPresentationProvider
     private let taskVisibilityPresentation: OptionalPresentationProvider
     private let weeklyLimitTogglePresentation: OptionalPresentationProvider
+    private let weeklyQuotaPositionPresentation: OptionalPresentationProvider
     private let usageLegendItems: LegendProvider
     private let language: LanguageProvider
     private let onSelectLanguage: LanguageHandler
@@ -705,6 +736,7 @@ final class DockPanelResizeController {
     private let onToggleTaskTextAlignment: ActionHandler
     private let onToggleTaskVisibility: ActionHandler
     private let onToggleWeeklyLimitVisibility: ActionHandler
+    private let onCycleWeeklyQuotaPosition: ActionHandler
     private let onManagePermissions: ActionHandler
     private let onCustomizeBarColors: ActionHandler
     private let onDragBegan: DragHandler
@@ -733,6 +765,7 @@ final class DockPanelResizeController {
         taskTextAlignmentPresentation: @escaping OptionalPresentationProvider,
         taskVisibilityPresentation: @escaping OptionalPresentationProvider,
         weeklyLimitTogglePresentation: @escaping OptionalPresentationProvider,
+        weeklyQuotaPositionPresentation: @escaping OptionalPresentationProvider,
         usageLegendItems: @escaping LegendProvider,
         language: @escaping LanguageProvider,
         onSelectLanguage: @escaping LanguageHandler,
@@ -741,6 +774,7 @@ final class DockPanelResizeController {
         onToggleTaskTextAlignment: @escaping ActionHandler,
         onToggleTaskVisibility: @escaping ActionHandler,
         onToggleWeeklyLimitVisibility: @escaping ActionHandler,
+        onCycleWeeklyQuotaPosition: @escaping ActionHandler,
         onManagePermissions: @escaping ActionHandler,
         onCustomizeBarColors: @escaping ActionHandler,
         onDragBegan: @escaping DragHandler,
@@ -754,6 +788,7 @@ final class DockPanelResizeController {
         self.taskTextAlignmentPresentation = taskTextAlignmentPresentation
         self.taskVisibilityPresentation = taskVisibilityPresentation
         self.weeklyLimitTogglePresentation = weeklyLimitTogglePresentation
+        self.weeklyQuotaPositionPresentation = weeklyQuotaPositionPresentation
         self.usageLegendItems = usageLegendItems
         self.language = language
         self.onSelectLanguage = onSelectLanguage
@@ -762,6 +797,7 @@ final class DockPanelResizeController {
         self.onToggleTaskTextAlignment = onToggleTaskTextAlignment
         self.onToggleTaskVisibility = onToggleTaskVisibility
         self.onToggleWeeklyLimitVisibility = onToggleWeeklyLimitVisibility
+        self.onCycleWeeklyQuotaPosition = onCycleWeeklyQuotaPosition
         self.onManagePermissions = onManagePermissions
         self.onCustomizeBarColors = onCustomizeBarColors
         self.onDragBegan = onDragBegan
@@ -885,6 +921,12 @@ final class DockPanelResizeController {
                 cancelPendingHide()
                 onToggleWeeklyLimitVisibility(identity)
                 updateOverlays(identity)
+            },
+            onCycleWeeklyQuotaPosition: { [weak self] in
+                guard let self else { return }
+                cancelPendingHide()
+                onCycleWeeklyQuotaPosition(identity)
+                refreshVisibleOverlay()
             },
             onManagePermissions: { [weak self] in
                 guard let self else { return }
@@ -1080,6 +1122,7 @@ final class DockPanelResizeController {
                 taskTextAlignment: taskTextAlignmentPresentation(identity),
                 taskVisibility: taskVisibilityPresentation(identity),
                 weeklyLimitToggle: weeklyLimitTogglePresentation(identity),
+                weeklyQuotaPosition: weeklyQuotaPositionPresentation(identity),
                 legendItems: usageLegendItems(identity),
                 language: language(),
                 resizeFocused: resizeFocusedHandle == identity,
@@ -1201,6 +1244,7 @@ private final class DockPanelInteractionView: NSView {
     private let taskTextAlignmentSurface = NSGlassEffectView()
     private let taskVisibilitySurface = NSGlassEffectView()
     private let weeklyLimitSurface = NSGlassEffectView()
+    private let weeklyQuotaPositionSurface = NSGlassEffectView()
     private let languageButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let permissionButton = NSButton(image: NSImage(), target: nil, action: nil)
     private let barColorButton = NSButton(image: NSImage(), target: nil, action: nil)
@@ -1210,6 +1254,9 @@ private final class DockPanelInteractionView: NSView {
     private let taskVisibilityButton = NSButton(image: NSImage(), target: nil, action: nil)
     private var taskVisibility: PanelMovementPresentation?
     private let weeklyLimitButton = NSButton(image: NSImage(), target: nil, action: nil)
+    private let weeklyQuotaPositionButton = NSButton(image: NSImage(), target: nil, action: nil)
+    private var weeklyQuotaPosition: PanelMovementPresentation?
+    private var weeklyLimitToggle: PanelMovementPresentation?
     private let legendView = DockPanelUsageLegendView()
     private let languagePicker: DockPanelLanguagePickerView
     private let resizeView: DockPanelResizeRegionView
@@ -1218,6 +1265,7 @@ private final class DockPanelInteractionView: NSView {
     private let onToggleTaskTextAlignment: () -> Void
     private let onToggleTaskVisibility: () -> Void
     private let onToggleWeeklyLimitVisibility: () -> Void
+    private let onCycleWeeklyQuotaPosition: () -> Void
     private let onManagePermissions: () -> Void
     private let onCustomizeBarColors: () -> Void
     private var side: PanelSide = .left
@@ -1232,6 +1280,7 @@ private final class DockPanelInteractionView: NSView {
             + (permissionButton.isHidden ? 0 : 1)
             + (barColorButton.isHidden ? 0 : 1)
             + (weeklyLimitButton.isHidden ? 0 : 1)
+            + (weeklyQuotaPositionButton.isHidden ? 0 : 1)
             + (taskVisibilityButton.isHidden ? 0 : 1)
     }
 
@@ -1249,6 +1298,7 @@ private final class DockPanelInteractionView: NSView {
         onToggleTaskTextAlignment: @escaping () -> Void,
         onToggleTaskVisibility: @escaping () -> Void,
         onToggleWeeklyLimitVisibility: @escaping () -> Void,
+        onCycleWeeklyQuotaPosition: @escaping () -> Void,
         onManagePermissions: @escaping () -> Void,
         onCustomizeBarColors: @escaping () -> Void,
         language: AppLanguage,
@@ -1260,6 +1310,7 @@ private final class DockPanelInteractionView: NSView {
         self.onToggleTaskTextAlignment = onToggleTaskTextAlignment
         self.onToggleTaskVisibility = onToggleTaskVisibility
         self.onToggleWeeklyLimitVisibility = onToggleWeeklyLimitVisibility
+        self.onCycleWeeklyQuotaPosition = onCycleWeeklyQuotaPosition
         self.onManagePermissions = onManagePermissions
         self.onCustomizeBarColors = onCustomizeBarColors
         languagePicker = DockPanelLanguagePickerView(
@@ -1294,6 +1345,11 @@ private final class DockPanelInteractionView: NSView {
             button: weeklyLimitButton,
             action: #selector(toggleWeeklyLimitVisibility)
         )
+        configure(
+            weeklyQuotaPositionSurface,
+            button: weeklyQuotaPositionButton,
+            action: #selector(cycleWeeklyQuotaPosition)
+        )
         configure(taskVisibilitySurface, button: taskVisibilityButton, action: #selector(toggleTaskVisibility))
         languagePickerSurface.style = .regular
         configureContinuousCorners(languagePickerSurface, radius: DockPanelOverlayGeometry.actionCornerRadius)
@@ -1308,6 +1364,7 @@ private final class DockPanelInteractionView: NSView {
         actionsView.addSubview(verticalSurface)
         actionsView.addSubview(taskTextAlignmentSurface)
         actionsView.addSubview(weeklyLimitSurface)
+        actionsView.addSubview(weeklyQuotaPositionSurface)
         actionsView.addSubview(taskVisibilitySurface)
         legendView.isHidden = true
         actionsView.addSubview(legendView)
@@ -1364,6 +1421,11 @@ private final class DockPanelInteractionView: NSView {
                 weeklyLimitButton.frame = weeklyLimitSurface.bounds
                 index += 1
             }
+            if !weeklyQuotaPositionButton.isHidden, frames.count > index {
+                weeklyQuotaPositionSurface.frame = frames[index]
+                weeklyQuotaPositionButton.frame = weeklyQuotaPositionSurface.bounds
+                index += 1
+            }
         } else {
             taskTextAlignmentSurface.frame = frames[index]
             taskTextAlignmentButton.frame = taskTextAlignmentSurface.bounds
@@ -1390,6 +1452,7 @@ private final class DockPanelInteractionView: NSView {
         taskTextAlignment: PanelMovementPresentation?,
         taskVisibility: PanelMovementPresentation?,
         weeklyLimitToggle: PanelMovementPresentation?,
+        weeklyQuotaPosition: PanelMovementPresentation?,
         legendItems: [DockPanelUsageLegendItem],
         language: AppLanguage,
         resizeFocused: Bool,
@@ -1398,6 +1461,8 @@ private final class DockPanelInteractionView: NSView {
     ) {
         self.side = side
         self.taskVisibility = taskVisibility
+        self.weeklyQuotaPosition = weeklyQuotaPosition
+        self.weeklyLimitToggle = weeklyLimitToggle
         legendView.items = legendItems
         legendView.alignTrailing = side == .right
         legendView.isHidden = legendItems.isEmpty || isLanguagePickerVisible
@@ -1435,6 +1500,9 @@ private final class DockPanelInteractionView: NSView {
         weeklyLimitButton.isHidden = weeklyLimitToggle == nil || isLanguagePickerVisible
         weeklyLimitSurface.isHidden = weeklyLimitButton.isHidden
         if let weeklyLimitToggle { apply(weeklyLimitToggle, to: weeklyLimitButton) }
+        weeklyQuotaPositionButton.isHidden = weeklyQuotaPosition == nil || isLanguagePickerVisible
+        weeklyQuotaPositionSurface.isHidden = weeklyQuotaPositionButton.isHidden
+        if let weeklyQuotaPosition { apply(weeklyQuotaPosition, to: weeklyQuotaPositionButton) }
         taskVisibilityButton.isHidden = taskVisibility == nil || isLanguagePickerVisible
         taskVisibilitySurface.isHidden = taskVisibilityButton.isHidden
         if let taskVisibility { apply(taskVisibility, to: taskVisibilityButton) }
@@ -1560,6 +1628,7 @@ private final class DockPanelInteractionView: NSView {
     @objc private func toggleTaskTextAlignment() { onToggleTaskTextAlignment() }
     @objc private func toggleTaskVisibility() { onToggleTaskVisibility() }
     @objc private func toggleWeeklyLimitVisibility() { onToggleWeeklyLimitVisibility() }
+    @objc private func cycleWeeklyQuotaPosition() { onCycleWeeklyQuotaPosition() }
     @objc private func managePermissions() { onManagePermissions() }
     @objc private func customizeBarColors() { onCustomizeBarColors() }
 
@@ -1575,6 +1644,8 @@ private final class DockPanelInteractionView: NSView {
         barColorButton.isHidden = true
         weeklyLimitSurface.isHidden = true
         weeklyLimitButton.isHidden = true
+        weeklyQuotaPositionSurface.isHidden = true
+        weeklyQuotaPositionButton.isHidden = true
         sideSurface.isHidden = true
         verticalSurface.isHidden = true
         legendView.isHidden = true
@@ -1593,7 +1664,9 @@ private final class DockPanelInteractionView: NSView {
         permissionSurface.isHidden = permissionButton.isHidden
         barColorButton.isHidden = identity != .usageOverview
         barColorSurface.isHidden = barColorButton.isHidden
-        weeklyLimitButton.isHidden = identity != .usageOverview
+        weeklyLimitButton.isHidden = weeklyLimitToggle == nil
+        weeklyQuotaPositionButton.isHidden = weeklyQuotaPosition == nil
+        weeklyQuotaPositionSurface.isHidden = weeklyQuotaPositionButton.isHidden
         weeklyLimitSurface.isHidden = weeklyLimitButton.isHidden
         sideSurface.isHidden = false
         legendView.isHidden = legendView.items.isEmpty
