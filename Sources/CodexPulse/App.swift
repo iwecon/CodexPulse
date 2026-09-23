@@ -363,7 +363,9 @@ final class DockPanelController {
         forceWallpaperRefresh: Bool = false,
         wallpaperRefreshReason: WallpaperRefreshReason = .stateCheck
     ) {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else {
+        // The first screen is the system primary display; NSScreen.main follows
+        // the key window and would move both panels when window focus changes.
+        guard let screen = NSScreen.screens.first else {
             removeWallpaperRefreshState(reason: wallpaperRefreshReason)
             return
         }

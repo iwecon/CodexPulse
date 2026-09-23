@@ -42,6 +42,8 @@ The npm commands work from any directory. Installing the CLI alone does not inst
 
 ## Use the panels
 
+With multiple displays, both panels stay on the system primary display and do not follow the pointer or focused window. Changing the primary display or connecting/disconnecting displays updates their placement automatically.
+
 The app has no Dock icon. Its transparent panels stay above desktop icons and below ordinary app windows, follow bottom, left, or right Dock placement, and support multiple Spaces.
 
 | Panel | What it shows |
